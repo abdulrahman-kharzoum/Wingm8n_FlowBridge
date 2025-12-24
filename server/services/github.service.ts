@@ -1,4 +1,5 @@
 import { Octokit } from '@octokit/rest';
+import type { N8NWorkflow, BranchWorkflows } from '@shared/types/workflow.types';
 
 export interface Repository {
   id: number;
@@ -278,6 +279,55 @@ export class GitHubService {
       console.error('[GitHub] Failed to get authenticated user:', error);
       throw error;
     }
+  }
+}
+
+/**
+ * Fetch all N8N workflow files from a specific branch
+ */
+export async function fetchBranchWorkflows(
+  service: GitHubService,
+  owner: string,
+  repo: string,
+  branch: string,
+  workflowPath: string = '/'
+): Promise<BranchWorkflows> {
+  try {
+    const workflows: Array<{
+      name: string;
+      path: string;
+      content: N8NWorkflow;
+    }> = [];
+
+    // Find all JSON files that could be N8N workflows
+    const workflowFiles = await service.findWorkflowFiles(owner, repo, branch, workflowPath);
+
+    // Fetch content of each workflow file
+    for (const file of workflowFiles) {
+      try {
+        const fileContent = await service.getFileContent(owner, repo, branch, file.path);
+        const workflowData = JSON.parse(fileContent.content) as N8NWorkflow;
+
+        // Verify it's a valid N8N workflow by checking for nodes
+        if (workflowData.nodes && Array.isArray(workflowData.nodes)) {
+          workflows.push({
+            name: file.name,
+            path: file.path,
+            content: workflowData,
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to parse workflow ${file.name}:`, error);
+      }
+    }
+
+    return {
+      branch,
+      workflows,
+    };
+  } catch (error) {
+    console.error(`Failed to fetch workflows from ${branch}:`, error);
+    throw error;
   }
 }
 
