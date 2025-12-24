@@ -23,7 +23,9 @@ import RepositorySelector from '@/components/RepositorySelector';
 import CredentialsComparison from '@/components/CredentialsComparison';
 import DomainsComparison from '@/components/DomainsComparison';
 import WorkflowCallsComparison from '@/components/WorkflowCallsComparison';
+import MergeDecisionSummary from '@/components/MergeDecisionSummary';
 import type { MergeDecision } from '@shared/types/workflow.types';
+import { toast } from 'sonner';
 
 export default function ComparisonPage() {
   const [, navigate] = useLocation();
@@ -89,14 +91,42 @@ export default function ComparisonPage() {
     }));
   };
 
+  const createMergeBranchMutation = trpc.merge.createMergeBranch.useMutation();
+  const createPullRequestMutation = trpc.merge.createPullRequest.useMutation();
+
   const handleCreateMergeBranch = async () => {
     if (!selectedRepo) return;
 
     try {
-      // TODO: Call API to create merge branch
-      console.log('Creating merge branch with decisions:', mergeDecisions);
+      const result = await createMergeBranchMutation.mutateAsync({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.repo,
+        stagingBranch: selectedRepo.stagingBranch,
+        mainBranch: selectedRepo.mainBranch,
+        decisions: mergeDecisions,
+      });
+
+      toast.success('Merge branch created successfully!');
+
+      // Show option to create PR
+      const shouldCreatePR = window.confirm(
+        'Merge branch created! Would you like to create a pull request?'
+      );
+
+      if (shouldCreatePR) {
+        const prResult = await createPullRequestMutation.mutateAsync({
+          owner: selectedRepo.owner,
+          repo: selectedRepo.repo,
+          mergeBranchName: result.data.name,
+          targetBranch: selectedRepo.mainBranch,
+        });
+
+        toast.success('Pull request created!');
+        window.open(prResult.data.url, '_blank');
+      }
     } catch (error) {
       console.error('Failed to create merge branch:', error);
+      toast.error('Failed to create merge branch. Please try again.');
     }
   };
 
@@ -284,24 +314,30 @@ export default function ComparisonPage() {
               </CardContent>
             </Card>
 
-            {/* Action Buttons */}
-            <div className="flex gap-4 justify-end">
-              <Button
-                onClick={() => setSelectedRepo(null)}
-                variant="outline"
-                className="border-slate-600 text-slate-300 hover:text-white"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
-              </Button>
-              <Button
-                onClick={handleCreateMergeBranch}
-                className="bg-accent hover:bg-accent-dark text-accent-foreground font-semibold"
-              >
-                <GitMerge className="w-4 h-4 mr-2" />
-                Create Merge Branch
-              </Button>
-            </div>
+            {/* Merge Decision Summary */}
+            <Card className="bg-gradient-to-r from-accent/10 to-accent/5 border-accent/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <GitMerge className="w-5 h-5 text-accent" />
+                  Merge Summary
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MergeDecisionSummary
+                  decisions={mergeDecisions}
+                  credentialCount={comparisonQuery.data.comparison.credentials.length}
+                  domainCount={comparisonQuery.data.comparison.domains.length}
+                  workflowCallCount={
+                    comparisonQuery.data.comparison.workflowCalls.differences.added.length +
+                    comparisonQuery.data.comparison.workflowCalls.differences.removed.length +
+                    comparisonQuery.data.comparison.workflowCalls.differences.modified.length
+                  }
+                  isLoading={createMergeBranchMutation.isPending}
+                  onConfirm={handleCreateMergeBranch}
+                  onCancel={() => setSelectedRepo(null)}
+                />
+              </CardContent>
+            </Card>
           </div>
         ) : null}
       </main>
