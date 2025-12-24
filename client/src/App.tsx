@@ -4,9 +4,11 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { RepositoryProvider } from "./contexts/RepositoryContext";
 import { useAuth } from "./_core/hooks/useAuth";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import RepositorySelection from "./pages/RepositorySelection";
 import Home from "./pages/Home";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -35,6 +37,7 @@ function Router() {
   return (
     <Switch>
       <Route path={"/login"} component={Login} />
+      <Route path={"/select-repository"} component={() => <ProtectedRoute component={RepositorySelection} />} />
       <Route path={"/dashboard"} component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path={"/"} component={() => {
         if (loading) {
@@ -66,10 +69,12 @@ function App() {
       <ThemeProvider
         defaultTheme="dark"
       >
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
+        <RepositoryProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </RepositoryProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

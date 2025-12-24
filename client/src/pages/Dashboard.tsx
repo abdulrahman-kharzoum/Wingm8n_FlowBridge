@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useLocation } from 'wouter';
 import { useAuth } from '@/_core/hooks/useAuth';
+import { useRepository } from '@/contexts/RepositoryContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -12,12 +14,15 @@ import {
   LogOut,
   Settings,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Github
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 
 export default function Dashboard() {
+  const [, navigate] = useLocation();
   const { user, logout } = useAuth();
+  const { selectedRepository } = useRepository();
   const [activeTab, setActiveTab] = useState('credentials');
   const [selectedBranch, setSelectedBranch] = useState<'staging' | 'main'>('staging');
 
@@ -36,7 +41,9 @@ export default function Dashboard() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-white">Wingm8n FlowBridge</h1>
-              <p className="text-xs text-slate-400">N8N Workflow Merge Tool</p>
+              <p className="text-xs text-slate-400">
+                {selectedRepository ? selectedRepository.repo.full_name : 'N8N Workflow Merge Tool'}
+              </p>
             </div>
           </div>
 
@@ -45,6 +52,15 @@ export default function Dashboard() {
               <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
               <span className="text-sm text-slate-300">{user?.name || 'User'}</span>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/select-repository')}
+              className="text-slate-400 hover:text-accent hover:bg-slate-800 flex items-center gap-2"
+            >
+              <Github className="w-4 h-4" />
+              Change Repo
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -154,9 +170,12 @@ export default function Dashboard() {
                 <div className="pt-4 border-t border-slate-700/50">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                    <span className="text-xs font-semibold text-slate-400">Sync Status</span>
+                    <span className="text-xs font-semibold text-slate-400">Repository</span>
                   </div>
-                  <p className="text-xs text-slate-500">Last synced: Just now</p>
+                  <p className="text-xs text-slate-300 font-mono break-all">
+                    {selectedRepository?.repo.full_name || 'No repository selected'}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-2">Last synced: Just now</p>
                   <Button
                     variant="outline"
                     size="sm"

@@ -87,3 +87,12 @@
 - [ ] S3 storage for workflow backups (optional)
 - [ ] CI/CD pipeline setup
 - [ ] Production deployment configuration
+
+## Phase 2.5: GitHub Repository Selection
+- [x] GitHub API service for fetching user repositories
+- [x] Repository selection page with filtering and search
+- [x] Support for public and private repositories
+- [x] Repository context and state management
+- [ ] Branch detection (staging/main)
+- [ ] Workflow file discovery in branches
+- [ ] Repository persistence in session/database
