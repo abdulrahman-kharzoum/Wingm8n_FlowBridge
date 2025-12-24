@@ -26,7 +26,7 @@ export const githubRouter = router({
 
         // Get GitHub access token from session/context
         // This assumes the token is stored in the session after OAuth callback
-        const githubToken = (ctx.req as any).session?.githubToken;
+        const githubToken = ctx.user?.githubToken;
 
         if (!githubToken) {
           throw new TRPCError({
@@ -69,7 +69,7 @@ export const githubRouter = router({
     )
     .query(async ({ ctx, input }) => {
       try {
-        const githubToken = (ctx.req as any).session?.githubToken;
+        const githubToken = ctx.user?.githubToken;
 
         if (!githubToken) {
           throw new TRPCError({
@@ -104,7 +104,7 @@ export const githubRouter = router({
     )
     .query(async ({ ctx, input }) => {
       try {
-        const githubToken = (ctx.req as any).session?.githubToken;
+        const githubToken = ctx.user?.githubToken;
 
         if (!githubToken) {
           throw new TRPCError({
@@ -144,7 +144,7 @@ export const githubRouter = router({
     )
     .query(async ({ ctx, input }) => {
       try {
-        const githubToken = (ctx.req as any).session?.githubToken;
+        const githubToken = ctx.user?.githubToken;
 
         if (!githubToken) {
           throw new TRPCError({
@@ -185,7 +185,7 @@ export const githubRouter = router({
     )
     .query(async ({ ctx, input }) => {
       try {
-        const githubToken = (ctx.req as any).session?.githubToken;
+        const githubToken = ctx.user?.githubToken;
 
         if (!githubToken) {
           throw new TRPCError({

@@ -12,7 +12,11 @@ import RepositorySelection from "./pages/RepositorySelection";
 import Home from "./pages/Home";
 import ComparisonPage from "./pages/ComparisonPage";
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+function ProtectedRoute({
+  component: Component,
+}: {
+  component: React.ComponentType;
+}) {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
@@ -38,21 +42,33 @@ function Router() {
   return (
     <Switch>
       <Route path={"/login"} component={Login} />
-      <Route path={"/select-repository"} component={() => <ProtectedRoute component={RepositorySelection} />} />
-      <Route path={"/dashboard"} component={() => <ProtectedRoute component={Dashboard} />} />
-      <Route path={"/compare"} component={() => <ProtectedRoute component={ComparisonPage} />} />
-      <Route path={"\"} component={() => {
-        if (loading) {
-          return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 flex items-center justify-center">
-              <div className="animate-spin">
-                <div className="h-12 w-12 border-4 border-accent border-t-transparent rounded-full" />
+      <Route
+        path={"/select-repository"}
+        component={() => <ProtectedRoute component={RepositorySelection} />}
+      />
+      <Route
+        path={"/dashboard"}
+        component={() => <ProtectedRoute component={Dashboard} />}
+      />
+      <Route
+        path={"/compare"}
+        component={() => <ProtectedRoute component={ComparisonPage} />}
+      />
+      <Route
+        path={"/"}
+        component={() => {
+          if (loading) {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 flex items-center justify-center">
+                <div className="animate-spin">
+                  <div className="h-12 w-12 border-4 border-accent border-t-transparent rounded-full" />
+                </div>
               </div>
-            </div>
-          );
-        }
-        return isAuthenticated ? <Dashboard /> : <Login />;
-      }} />
+            );
+          }
+          return isAuthenticated ? <Dashboard /> : <Login />;
+        }}
+      />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
@@ -68,9 +84,7 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="dark"
-      >
+      <ThemeProvider defaultTheme="dark">
         <RepositoryProvider>
           <TooltipProvider>
             <Toaster />

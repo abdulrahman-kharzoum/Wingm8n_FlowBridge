@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Github, GitBranch, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
+import { skipToken } from '@trpc/react-query';
 
 interface RepositorySelectorProps {
   onRepositorySelected: (owner: string, repo: string, stagingBranch: string, mainBranch: string) => void;
@@ -26,21 +27,20 @@ export default function RepositorySelector({ onRepositorySelected, isLoading = f
   const [error, setError] = useState<string | null>(null);
 
   // Fetch repositories
-  const repositoriesQuery = trpc.github.getUserRepositories.useQuery(
+  const repositoriesQuery = trpc.github.listRepositories.useQuery(
     { page: 1, perPage: 50 },
     { retry: false }
   );
 
   // Fetch branches for selected repository
-  const branchesQuery = trpc.github.getRepositoryBranches.useQuery(
+  const branchesQuery = trpc.github.getBranches.useQuery(
     selectedRepo
       ? {
           owner: selectedRepo.split('/')[0],
           repo: selectedRepo.split('/')[1],
         }
-      : null,
+      : skipToken,
     {
-      enabled: !!selectedRepo,
       retry: false,
     }
   );
@@ -48,7 +48,7 @@ export default function RepositorySelector({ onRepositorySelected, isLoading = f
   // Update branches list when query completes
   useEffect(() => {
     if (branchesQuery.data) {
-      const branchNames = branchesQuery.data.map((b) => b.name);
+      const branchNames = branchesQuery.data.branches.map((b: any) => b.name);
       setBranches(branchNames);
 
       // Auto-select staging and main if they exist
@@ -103,8 +103,8 @@ export default function RepositorySelector({ onRepositorySelected, isLoading = f
                 <SelectItem value="loading" disabled>
                   Loading repositories...
                 </SelectItem>
-              ) : repositoriesQuery.data?.repos && repositoriesQuery.data.repos.length > 0 ? (
-                repositoriesQuery.data.repos.map((repo) => (
+              ) : repositoriesQuery.data?.repositories && repositoriesQuery.data.repositories.length > 0 ? (
+                repositoriesQuery.data.repositories.map((repo) => (
                   <SelectItem key={repo.id} value={repo.full_name}>
                     <div className="flex items-center gap-2">
                       <Github className="w-4 h-4" />

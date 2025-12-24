@@ -63,7 +63,7 @@ export class GitHubService {
     affiliation: 'owner' | 'collaborator' | 'organization_member' = 'owner'
   ): Promise<{ repos: Repository[]; total: number }> {
     try {
-      const response = await (this.octokit.rest.repos as any).list({
+      const response = await (this.octokit.rest.repos as any).listForAuthenticatedUser({
         page,
         per_page: perPage,
         affiliation,
@@ -75,9 +75,9 @@ export class GitHubService {
         repos: response.data as Repository[],
         total: response.headers['x-total-count'] ? parseInt(response.headers['x-total-count']) : 0,
       };
-    } catch (error) {
-      console.error('[GitHub] Failed to fetch repositories:', error);
-      throw new Error('Failed to fetch repositories from GitHub');
+    } catch (error: any) {
+      console.error('[GitHub] Failed to fetch repositories:', error.message, error.status, error.response?.data);
+      throw new Error(`Failed to fetch repositories from GitHub: ${error.message}`);
     }
   }
 

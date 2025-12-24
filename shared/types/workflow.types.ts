@@ -116,7 +116,7 @@ export interface MergeDecision {
     };
   };
   workflowCalls: {
-    [workflowName: string]: 'staging' | 'main';
+    [workflowName: string]: 'add' | 'remove' | 'keep';
   };
 }
 

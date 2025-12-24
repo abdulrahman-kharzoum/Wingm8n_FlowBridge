@@ -19,6 +19,7 @@ import {
   GitMerge,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
+import { skipToken } from '@trpc/react-query';
 import RepositorySelector from '@/components/RepositorySelector';
 import CredentialsComparison from '@/components/CredentialsComparison';
 import DomainsComparison from '@/components/DomainsComparison';
@@ -52,9 +53,8 @@ export default function ComparisonPage() {
           stagingBranch: selectedRepo.stagingBranch,
           mainBranch: selectedRepo.mainBranch,
         }
-      : null,
+      : skipToken,
     {
-      enabled: !!selectedRepo,
       retry: false,
     }
   );
@@ -234,31 +234,31 @@ export default function ComparisonPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <div className="text-2xl font-bold text-accent">
-                      {comparisonQuery.data.summary.credentialChanges}
+                      {comparisonQuery.data.data.summary.credentialChanges}
                     </div>
                     <p className="text-sm text-slate-400">Credential Changes</p>
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-accent">
-                      {comparisonQuery.data.summary.domainChanges}
+                      {comparisonQuery.data.data.summary.domainChanges}
                     </div>
                     <p className="text-sm text-slate-400">Domain Changes</p>
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-accent">
-                      {comparisonQuery.data.summary.workflowCallChanges}
+                      {comparisonQuery.data.data.summary.workflowCallChanges}
                     </div>
                     <p className="text-sm text-slate-400">Workflow Call Changes</p>
                   </div>
                   <div>
                     <Badge
                       className={
-                        comparisonQuery.data.summary.hasConflicts
+                        comparisonQuery.data.data.summary.hasConflicts
                           ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
                           : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
                       }
                     >
-                      {comparisonQuery.data.summary.hasConflicts ? 'Has Conflicts' : 'No Conflicts'}
+                      {comparisonQuery.data.data.summary.hasConflicts ? 'Has Conflicts' : 'No Conflicts'}
                     </Badge>
                   </div>
                 </div>
@@ -291,7 +291,7 @@ export default function ComparisonPage() {
                   {/* Credentials Tab */}
                   <TabsContent value="credentials" className="mt-6">
                     <CredentialsComparison
-                      credentials={comparisonQuery.data.comparison.credentials}
+                      credentials={comparisonQuery.data.data.comparison.credentials}
                       onCredentialSelected={handleCredentialSelected}
                     />
                   </TabsContent>
@@ -299,7 +299,7 @@ export default function ComparisonPage() {
                   {/* Domains Tab */}
                   <TabsContent value="domains" className="mt-6">
                     <DomainsComparison
-                      domains={comparisonQuery.data.comparison.domains}
+                      domains={comparisonQuery.data.data.comparison.domains}
                       onDomainSelected={handleDomainSelected}
                     />
                   </TabsContent>
@@ -307,7 +307,7 @@ export default function ComparisonPage() {
                   {/* Workflows Tab */}
                   <TabsContent value="workflows" className="mt-6">
                     <WorkflowCallsComparison
-                      workflowCalls={comparisonQuery.data.comparison.workflowCalls}
+                      workflowCalls={comparisonQuery.data.data.comparison.workflowCalls}
                     />
                   </TabsContent>
                 </Tabs>
@@ -325,12 +325,12 @@ export default function ComparisonPage() {
               <CardContent>
                 <MergeDecisionSummary
                   decisions={mergeDecisions}
-                  credentialCount={comparisonQuery.data.comparison.credentials.length}
-                  domainCount={comparisonQuery.data.comparison.domains.length}
+                  credentialCount={comparisonQuery.data.data.comparison.credentials.length}
+                  domainCount={comparisonQuery.data.data.comparison.domains.length}
                   workflowCallCount={
-                    comparisonQuery.data.comparison.workflowCalls.differences.added.length +
-                    comparisonQuery.data.comparison.workflowCalls.differences.removed.length +
-                    comparisonQuery.data.comparison.workflowCalls.differences.modified.length
+                    comparisonQuery.data.data.comparison.workflowCalls.differences.added.length +
+                    comparisonQuery.data.data.comparison.workflowCalls.differences.removed.length +
+                    comparisonQuery.data.data.comparison.workflowCalls.differences.modified.length
                   }
                   isLoading={createMergeBranchMutation.isPending}
                   onConfirm={handleCreateMergeBranch}

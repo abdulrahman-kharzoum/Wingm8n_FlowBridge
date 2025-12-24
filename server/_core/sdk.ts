@@ -24,55 +24,66 @@ export type SessionPayload = {
   name: string;
 };
 
-const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
-const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
-const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
+const GITHUB_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token";
+const GITHUB_USER_API_URL = "https://api.github.com/user";
 
 class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
-    if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
-      );
-    }
-  }
-
-  private decodeState(state: string): string {
-    const redirectUri = atob(state);
-    return redirectUri;
+    console.log("[OAuth] Initialized for GitHub");
   }
 
   async getTokenByCode(
     code: string,
     state: string
   ): Promise<ExchangeTokenResponse> {
-    const payload: ExchangeTokenRequest = {
-      clientId: ENV.appId,
-      grantType: "authorization_code",
+    const payload: Record<string, string> = {
+      client_id: ENV.githubClientId,
+      client_secret: ENV.githubClientSecret,
       code,
-      redirectUri: this.decodeState(state),
     };
 
-    const { data } = await this.client.post<ExchangeTokenResponse>(
-      EXCHANGE_TOKEN_PATH,
-      payload
-    );
-
-    return data;
-  }
-
-  async getUserInfoByToken(
-    token: ExchangeTokenResponse
-  ): Promise<GetUserInfoResponse> {
-    const { data } = await this.client.post<GetUserInfoResponse>(
-      GET_USER_INFO_PATH,
+    const { data } = await axios.post(
+      GITHUB_ACCESS_TOKEN_URL,
+      payload,
       {
-        accessToken: token.accessToken,
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "Wingm8n-FlowBridge",
+        },
       }
     );
 
-    return data;
+    if (data.error) {
+      throw new Error(`GitHub OAuth error: ${data.error_description || data.error}`);
+    }
+
+    return {
+      accessToken: data.access_token,
+      tokenType: data.token_type,
+      expiresIn: data.expires_in || 0,
+      scope: data.scope,
+      idToken: "", // Not used for GitHub
+    };
+  }
+
+  async getUserInfoByToken(
+    token: { accessToken: string }
+  ): Promise<GetUserInfoResponse> {
+    const { data } = await axios.get(GITHUB_USER_API_URL, {
+      headers: {
+        Authorization: `Bearer ${token.accessToken}`,
+        "User-Agent": "Wingm8n-FlowBridge",
+      },
+    });
+
+    return {
+      openId: String(data.id),
+      projectId: ENV.appId,
+      name: data.name || data.login,
+      email: data.email,
+      platform: "github",
+      loginMethod: "github",
+    };
   }
 }
 
@@ -235,25 +246,7 @@ class SDKServer {
   async getUserInfoWithJwt(
     jwtToken: string
   ): Promise<GetUserInfoWithJwtResponse> {
-    const payload: GetUserInfoWithJwtRequest = {
-      jwtToken,
-      projectId: ENV.appId,
-    };
-
-    const { data } = await this.client.post<GetUserInfoWithJwtResponse>(
-      GET_USER_INFO_WITH_JWT_PATH,
-      payload
-    );
-
-    const loginMethod = this.deriveLoginMethod(
-      (data as any)?.platforms,
-      (data as any)?.platform ?? data.platform ?? null
-    );
-    return {
-      ...(data as any),
-      platform: loginMethod,
-      loginMethod,
-    } as GetUserInfoWithJwtResponse;
+    throw new Error("getUserInfoWithJwt is not supported with GitHub provider");
   }
 
   async authenticateRequest(req: Request): Promise<User> {
@@ -272,20 +265,7 @@ class SDKServer {
 
     // If user not in DB, sync from OAuth server automatically
     if (!user) {
-      try {
-        const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-        await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: signedInAt,
-        });
-        user = await db.getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
-      }
+      throw ForbiddenError("User not found and sync not supported");
     }
 
     if (!user) {
