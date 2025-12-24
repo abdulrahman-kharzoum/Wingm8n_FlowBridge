@@ -234,8 +234,11 @@ export default function Dashboard() {
                         <p className="text-sm text-slate-300 mt-1">
                           To get started, connect your GitHub repository containing N8N workflows. We'll analyze credentials across branches.
                         </p>
-                        <Button className="mt-3 bg-accent hover:bg-accent-dark text-accent-foreground">
-                          Connect Repository
+                        <Button 
+                          onClick={() => navigate('/compare')}
+                          className="mt-3 bg-accent hover:bg-accent-dark text-accent-foreground"
+                        >
+                          Start Comparison
                         </Button>
                       </div>
                     </div>
@@ -250,8 +253,11 @@ export default function Dashboard() {
                         <p className="text-sm text-slate-300 mt-1">
                           Once connected, we'll detect and compare all HTTP endpoints, webhooks, and API URLs between branches.
                         </p>
-                        <Button className="mt-3 bg-accent hover:bg-accent-dark text-accent-foreground" disabled>
-                          Analyze Domains
+                        <Button 
+                          onClick={() => navigate('/compare')}
+                          className="mt-3 bg-accent hover:bg-accent-dark text-accent-foreground"
+                        >
+                          Start Comparison
                         </Button>
                       </div>
                     </div>
@@ -266,8 +272,11 @@ export default function Dashboard() {
                         <p className="text-sm text-slate-300 mt-1">
                           We'll analyze workflow-to-workflow calls and show you how they differ between staging and production.
                         </p>
-                        <Button className="mt-3 bg-accent hover:bg-accent-dark text-accent-foreground" disabled>
-                          View Call Chains
+                        <Button 
+                          onClick={() => navigate('/compare')}
+                          className="mt-3 bg-accent hover:bg-accent-dark text-accent-foreground"
+                        >
+                          Start Comparison
                         </Button>
                       </div>
                     </div>

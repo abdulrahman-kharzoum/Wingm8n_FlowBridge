@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import RepositorySelection from "./pages/RepositorySelection";
 import Home from "./pages/Home";
+import ComparisonPage from "./pages/ComparisonPage";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, loading } = useAuth();
@@ -39,7 +40,8 @@ function Router() {
       <Route path={"/login"} component={Login} />
       <Route path={"/select-repository"} component={() => <ProtectedRoute component={RepositorySelection} />} />
       <Route path={"/dashboard"} component={() => <ProtectedRoute component={Dashboard} />} />
-      <Route path={"/"} component={() => {
+      <Route path={"/compare"} component={() => <ProtectedRoute component={ComparisonPage} />} />
+      <Route path={"\"} component={() => {
         if (loading) {
           return (
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 flex items-center justify-center">
