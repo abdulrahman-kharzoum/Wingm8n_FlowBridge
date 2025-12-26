@@ -195,6 +195,13 @@ export class PRAnalyzerService {
             // Fallback to path if nodeId is somehow missing (legacy support)
             return `webhook:${match[2]}`;
         }
+
+        // For standard URLs, use Node ID + Parameter Path to correlate changes
+        // This ensures that if a URL changes in the same field, it appears as a modification
+        if (domain.nodeId && domain.parameterPath) {
+            return `${domain.nodeId}:${domain.parameterPath}`;
+        }
+
         return domain.url;
     };
 
@@ -404,9 +411,36 @@ export class PRAnalyzerService {
       }
     }
 
+    // Filter out credentials that are identical in both branches (unchanged)
+    const filteredCredentials = Array.from(credentials.values()).filter(cred => {
+        // If it's only in one branch, keep it (New or Removed)
+        if (!cred.inMain || !cred.inStaging) return true;
+
+        // If ids are different (Replacement), keep it
+        if (cred.mainId && cred.stagingId && cred.mainId !== cred.stagingId) return true;
+
+        // If names are different (Renamed), keep it
+        if (cred.mainName !== cred.stagingName) return true;
+
+        // Otherwise, it's identical (Unchanged), so hide it
+        return false;
+    });
+
+    // Filter out domains that are identical in both branches
+    const filteredDomains = Array.from(domains.values()).filter(domain => {
+        // If it's only in one branch, keep it (New or Removed)
+        if (!domain.inMain || !domain.inStaging) return true;
+
+        // If the URL has changed (e.g. for Webhooks where we match by Node ID), keep it
+        if (domain.mainUrl !== domain.stagingUrl) return true;
+
+        // Otherwise, it's identical, so hide it
+        return false;
+    });
+
     return {
-      credentials: Array.from(credentials.values()),
-      domains: Array.from(domains.values()),
+      credentials: filteredCredentials,
+      domains: filteredDomains,
       workflowCalls: Array.from(workflowCalls.values()),
       secrets: Array.from(new Set(secrets)), // Deduplicate secrets
       metadata: metadataDiffs,

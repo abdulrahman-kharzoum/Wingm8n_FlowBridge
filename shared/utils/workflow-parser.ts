@@ -309,6 +309,12 @@ export function extractDomains(workflow: N8NWorkflow, workflowName: string): Dom
           // Check if this key looks like it might contain a URL
           if (urlPatterns.some((pattern) => key.toLowerCase().includes(pattern))) {
             if (typeof value === 'string' && isValidUrl(value)) {
+              // Exclude internal n8n workflow URLs (e.g., /workflow/Z5SIgielsvB18uFX)
+              // These are typically found in cachedResultUrl and handled in Workflow Call Graph
+              if (value.match(/^\/workflow\/[a-zA-Z0-9]+$/)) {
+                return;
+              }
+
               domains.push({
                 url: value,
                 nodeId: node.id,
@@ -509,14 +515,17 @@ export function compareWorkflowCalls(
  * Validate if a string is a valid URL
  */
 function isValidUrl(str: string): boolean {
+  // Handle n8n expression strings (starting with =)
+  const cleanStr = str.startsWith('=') ? str.slice(1) : str;
+
   try {
-    new URL(str);
+    new URL(cleanStr);
     return true;
   } catch {
     // Check for relative URLs or webhook patterns
     return (
-      /^(https?:\/\/|\/|webhook|\.\.\/)/i.test(str) ||
-      /^[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=]+$/.test(str)
+      /^(https?:\/\/|\/|webhook|\.\.\/)/i.test(cleanStr) ||
+      /^[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=]+$/.test(cleanStr)
     );
   }
 }
