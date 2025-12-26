@@ -1,0 +1,1564 @@
+I want to create a beautiful UI, like GitHub, for N8N, I'm pushing N8N workflow to the GitHub. So I'm pushing staging workflows and current workflows that are already production into the main. The staging is for developing the workflow. So, what I need in this new IUX, I need to list all the credentials in this workflows. As we know that the N8N workflow is JSON, so we can see the credential IDs. So we need to list the credential for the two branches: The staging branches and the main branches. Not for only one workflow, for all the uploaded workflow on their branch. This is the first thing. But of course, I don't want to duplicate the credential. So if I show an ID, same ID of the credential, I don't want to add it again. And maybe the staging also can have an additional credential on the main one? Because the development process can have another credential This is the first thing in the UI, which is the list of credentials And the second thing is the domain I need to detect every single URL in the staging and the main branch And I want to see the difference between them so we can choose the correct one and merge it correctly. The whole purpose of this is to merge things quickly and correctly as structured as possible. Also, other than every single domain URL HTTP or maybe you can be known or they would hook those notes. I don't want to do change these; they look I want to change them of course, and I'm sorry I won't change them as well. That's I want to see the changes from this station did a main and the result I can decide which one to put for merging. Also, there last thing which is the node which called workflows. Also, the staging has a workflow name which is staging- and the main workflows which is production has another name. I want to track this call out workflow which can be tracked in the JSON and it in trigger workflow. I think so. I want to see and the staging the current workflow calling like for example workflow one calling the workflow two then we're going to calling those 4, 3 and so on. In the main, no, it's happening in the other hand it was that will flow 3 calling those 2 then look for 2 calling those flow 1 and then we'll see that changes in calling workflows and decide the correct emerging calling workflow.
+So basically I need you to search about how can I create this UI/UX react web whatever using courses of our coding and from and stuff like that and what is the tools should I use to make such this website. I want you to analyze there my requirement and create a small document about it. I don't know if possible to connect this website to the Github and I think it's possible so we can see the changes in real time and like the Github do. The whole process is built on that changing changes between the main branch and station branch. We don't touch anything else other than changing. We don't touch other node other code in the other than the changing. The main focus is changing between the main and the station. Maybe there is a result will after there was a decide which is which. Then you can upload it to the merger branch. Create a merge branch that we can upload it on it. And then this merge branch if everything goes well a merger branch go and merge with the main. I think to you both like this process. Please help me.
+
+# N8N Workflow GitHub Merge UI - Technical Analysis & Implementation Plan
+
+## Executive Summary
+
+This document outlines a comprehensive plan to build a GitHub-style UI for managing N8N workflow merges between staging and production branches. The system will analyze three key differentials: credentials, domains/URLs, and workflow call chains.
+
+---
+
+## 1. Project Requirements Analysis
+
+### Core Features
+
+#### 1.1 Credential Management
+**Objective**: List all unique credential IDs from workflows across both branches
+
+- **Data Source**: N8N workflow JSON files contain `credentials` objects with IDs
+- **Key Requirements**:
+  - Deduplicate credential IDs (show each unique ID once)
+  - Display credentials from both staging and main branches
+  - Highlight credentials unique to staging (development-only credentials)
+  - Show credential names and types for better identification
+  - Support filtering and searching
+
+**N8N Credential Structure Example**:
+```json
+{
+  "nodes": [{
+    "credentials": {
+      "slackApi": {
+        "id": "1",
+        "name": "Slack Account"
+      }
+    }
+  }]
+}
+```
+
+#### 1.2 Domain/URL Detection
+**Objective**: Detect and compare all URLs, webhooks, and HTTP endpoints
+
+- **Detection Targets**:
+  - HTTP/HTTPS URLs in HTTP Request nodes
+  - Webhook URLs in Webhook nodes
+  - Any node containing URL parameters
+- **Comparison Features**:
+  - Side-by-side diff view
+  - Highlight changed URLs between staging and main
+  - Allow user to select which version to keep
+  - Batch selection for multiple URLs
+
+**Common URL Locations in N8N**:
+- `nodes[].parameters.url`
+- `nodes[].parameters.webhookUrl`
+- `nodes[].parameters.path`
+
+#### 1.3 Workflow Call Chain Analysis
+**Objective**: Track workflow-to-workflow calls and visualize call chains
+
+- **Detection Method**: "Execute Workflow" nodes reference other workflows
+- **Naming Convention**:
+  - Staging: `staging-workflow-name`
+  - Production: `workflow-name` (no prefix)
+- **Visualization**:
+  - Flow diagram showing call chains
+  - Comparison of staging vs main call structures
+  - Identify circular dependencies
+  - Highlight differences in workflow names and call order
+
+**Execute Workflow Node Structure**:
+```json
+{
+  "type": "n8n-nodes-base.executeWorkflow",
+  "parameters": {
+    "workflowId": "staging-workflow-1"
+  }
+}
+```
+
+---
+
+## 2. Technical Architecture
+
+### 2.1 Recommended Tech Stack
+
+#### Frontend Framework
+**React with TypeScript** - Industry standard, excellent ecosystem
+
+#### UI Component Library
+**shadcn/ui + Tailwind CSS** (Recommended)
+- Modern, GitHub-like aesthetic
+- Copy-paste components (full control)
+- Built on Radix UI (accessibility)
+- Excellent for custom designs
+- ~85k GitHub stars, active development
+
+**Alternative**: Material UI if you prefer pre-built enterprise components
+
+#### Key Libraries
+
+1. **GitHub Integration**
+   - `@octokit/rest` - Official GitHub REST API client
+   - GitHub compare API endpoint: `/repos/{owner}/{repo}/compare/{base}...{head}`
+
+2. **JSON Diff & Visualization**
+   - `json-diff-kit` - Advanced JSON diffing with LCS algorithm
+   - `virtual-react-json-diff` - High-performance viewer for large JSON
+   - `react-json-view-compare` - Alternative for simpler use cases
+
+3. **Graph Visualization (for workflow chains)**
+   - `react-flow` or `reactflow` - Interactive node-based graphs
+   - Perfect for visualizing workflow call chains
+
+4. **Data Management**
+   - `zustand` or `Redux Toolkit` - State management
+   - `react-query` / `@tanstack/react-query` - API data fetching & caching
+
+5. **Routing**
+   - `react-router-dom` v6 - Client-side routing
+
+### 2.2 Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     React Frontend                       │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  Main Dashboard                                    │  │
+│  │  - Branch Selector (staging / main)                │  │
+│  │  - Sync Status                                     │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  │
+│  │Credential│  │  Domain  │  │  Workflow Call       │  │
+│  │  Panel   │  │  Panel   │  │  Chain Panel         │  │
+│  └──────────┘  └──────────┘  └──────────────────────┘  │
+│                                                          │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  Merge Decision Panel                              │  │
+│  │  - Selected Changes                                │  │
+│  │  - Create Merge Branch Button                     │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                           ↕
+              ┌─────────────────────────┐
+              │   GitHub API Layer      │
+              │  - Fetch branches       │
+              │  - Compare commits      │
+              │  - Create branches      │
+              │  - Create pull requests │
+              └─────────────────────────┘
+                           ↕
+              ┌─────────────────────────┐
+              │   GitHub Repository     │
+              │  - staging branch       │
+              │  - main branch          │
+              │  - merge branch         │
+              └─────────────────────────┘
+```
+
+---
+
+## 3. Implementation Strategy
+
+### 3.1 Project Structure
+
+```
+n8n-merge-tool/
+├── src/
+│   ├── components/
+│   │   ├── credentials/
+│   │   │   ├── CredentialList.tsx
+│   │   │   ├── CredentialCompare.tsx
+│   │   │   └── CredentialFilter.tsx
+│   │   ├── domains/
+│   │   │   ├── DomainList.tsx
+│   │   │   ├── DomainDiff.tsx
+│   │   │   └── DomainSelector.tsx
+│   │   ├── workflows/
+│   │   │   ├── WorkflowGraph.tsx
+│   │   │   ├── WorkflowCallChain.tsx
+│   │   │   └── WorkflowComparison.tsx
+│   │   ├── merge/
+│   │   │   ├── MergePanel.tsx
+│   │   │   ├── ConflictResolver.tsx
+│   │   │   └── MergePreview.tsx
+│   │   └── shared/
+│   │       ├── BranchSelector.tsx
+│   │       ├── DiffViewer.tsx
+│   │       └── Layout.tsx
+│   ├── services/
+│   │   ├── github.service.ts
+│   │   ├── workflow-parser.service.ts
+│   │   ├── credential-extractor.service.ts
+│   │   ├── domain-extractor.service.ts
+│   │   └── workflow-chain-analyzer.service.ts
+│   ├── hooks/
+│   │   ├── useGithubData.ts
+│   │   ├── useWorkflowDiff.ts
+│   │   └── useMergeState.ts
+│   ├── types/
+│   │   ├── workflow.types.ts
+│   │   ├── github.types.ts
+│   │   └── merge.types.ts
+│   ├── utils/
+│   │   ├── json-parser.ts
+│   │   ├── diff-calculator.ts
+│   │   └── url-extractor.ts
+│   └── App.tsx
+├── package.json
+└── README.md
+```
+
+### 3.2 Core Services Implementation
+
+#### GitHub Service (Pseudocode)
+```typescript
+class GitHubService {
+  // Fetch all workflow files from a branch
+  async fetchBranchWorkflows(branch: 'staging' | 'main'): Promise<Workflow[]>
+  
+  // Compare two branches
+  async compareBranches(base: string, head: string): Promise<CompareResult>
+  
+  // Create a new merge branch
+  async createMergeBranch(baseBranch: string, changes: MergeChanges): Promise<Branch>
+  
+  // Create pull request
+  async createPullRequest(from: string, to: string): Promise<PullRequest>
+}
+```
+
+#### Workflow Parser Service (Pseudocode)
+```typescript
+class WorkflowParserService {
+  // Extract all credentials from workflows
+  extractCredentials(workflows: Workflow[]): Credential[]
+  
+  // Extract all URLs/domains from workflows
+  extractDomains(workflows: Workflow[]): Domain[]
+  
+  // Analyze workflow call chains
+  analyzeWorkflowChains(workflows: Workflow[]): WorkflowChain[]
+  
+  // Find differences between two sets of workflows
+  findDifferences(stagingWorkflows: Workflow[], mainWorkflows: Workflow[]): Diff
+}
+```
+
+---
+
+## 4. GitHub Integration Details
+
+### 4.1 GitHub API Usage
+
+**Authentication**: Personal Access Token (PAT) or GitHub OAuth App
+
+**Key Endpoints**:
+1. **List Repository Contents**:
+   ```
+   GET /repos/{owner}/{repo}/contents/{path}?ref={branch}
+   ```
+
+2. **Compare Branches**:
+   ```
+   GET /repos/{owner}/{repo}/compare/{base}...{head}
+   ```
+
+3. **Create Branch**:
+   ```
+   POST /repos/{owner}/{repo}/git/refs
+   ```
+
+4. **Update File Contents**:
+   ```
+   PUT /repos/{owner}/{repo}/contents/{path}
+   ```
+
+5. **Create Pull Request**:
+   ```
+   POST /repos/{owner}/{repo}/pulls
+   ```
+
+### 4.2 Real-time Updates
+
+**Options**:
+1. **Polling** (Simplest): Check for changes every 30-60 seconds
+2. **GitHub Webhooks** (Advanced): Receive push notifications (requires server)
+3. **Manual Refresh**: User-triggered updates (most reliable for small teams)
+
+**Recommendation**: Start with manual refresh, add polling if needed
+
+---
+
+## 5. UI/UX Design Principles
+
+### 5.1 Layout Design
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  Logo    [Staging ▼] vs [Main ▼]     [Refresh] [Merge]    │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  ┌─ Credentials ─────────────────────────────────────┐    │
+│  │  ✓ credential-1  (API Key)         [Both]         │    │
+│  │  ⚠ credential-2  (OAuth2)          [Staging Only] │    │
+│  │  ✓ credential-3  (Basic Auth)      [Both]         │    │
+│  └────────────────────────────────────────────────────┘    │
+│                                                            │
+│  ┌─ Domains/URLs ────────────────────────────────────┐    │
+│  │  Staging                    Main                   │    │
+│  │  api.staging.example.com    api.example.com       │    │
+│  │  [Select]                   [Select] ← Changed    │    │
+│  │  webhook.dev.io/staging     webhook.dev.io/prod   │    │
+│  │  [Select]                   [Select] ← Changed    │    │
+│  └────────────────────────────────────────────────────┘    │
+│                                                            │
+│  ┌─ Workflow Call Chains ───────────────────────────┐     │
+│  │                                                   │     │
+│  │  Staging:                  Main:                 │     │
+│  │  ┌─────────┐                ┌─────────┐          │     │
+│  │  │staging- │                │workflow-│          │     │
+│  │  │workflow1│──▶             │  main  │──▶       │     │
+│  │  └─────────┘   │            └─────────┘   │      │     │
+│  │                ▼                           ▼      │     │
+│  │            ┌─────────┐                ┌────────┐ │     │
+│  │            │staging- │                │workflow│ │     │
+│  │            │workflow2│                │   2    │ │     │
+│  │            └─────────┘                └────────┘ │     │
+│  │                                                   │     │
+│  └───────────────────────────────────────────────────┘    │
+│                                                            │
+│  ┌─ Merge Plan ──────────────────────────────────────┐    │
+│  │  • Keep credential-2 from staging                  │    │
+│  │  • Use main branch URLs for all HTTP requests     │    │
+│  │  • Update workflow call chain to main structure   │    │
+│  │                                                    │    │
+│  │  [Create Merge Branch] [Preview Changes]          │    │
+│  └────────────────────────────────────────────────────┘    │
+└────────────────────────────────────────────────────────────┘
+```
+
+### 5.2 Color Scheme (GitHub-inspired)
+
+- **Added/New**: Green (#2da44e)
+- **Removed**: Red (#cf222e)
+- **Modified**: Orange (#fb8500)
+- **Unchanged**: Gray (#57606a)
+- **Background**: Dark theme support with #0d1117 / white
+
+---
+
+## 6. Step-by-Step Implementation Plan
+
+### Phase 1: Foundation (Week 1-2)
+- [ ] Set up React + TypeScript project with Vite
+- [ ] Install and configure shadcn/ui + Tailwind
+- [ ] Implement GitHub authentication
+- [ ] Create basic layout and routing
+- [ ] Build GitHub service to fetch branch contents
+
+### Phase 2: Data Extraction (Week 2-3)
+- [ ] Implement workflow JSON parser
+- [ ] Build credential extraction logic
+- [ ] Build domain/URL extraction logic
+- [ ] Build workflow chain analyzer
+- [ ] Create data models and TypeScript types
+
+### Phase 3: UI Components (Week 3-4)
+- [ ] Build credential comparison component
+- [ ] Build domain diff viewer
+- [ ] Implement workflow graph visualization
+- [ ] Create merge decision panel
+- [ ] Add filtering and search functionality
+
+### Phase 4: Merge Logic (Week 4-5)
+- [ ] Implement diff algorithm for each data type
+- [ ] Build conflict resolution UI
+- [ ] Create merge branch generation logic
+- [ ] Implement GitHub API calls for creating branches
+- [ ] Add pull request creation
+
+### Phase 5: Polish & Testing (Week 5-6)
+- [ ] Add loading states and error handling
+- [ ] Implement responsive design
+- [ ] Add keyboard shortcuts
+- [ ] Write tests for core logic
+- [ ] Documentation and README
+
+---
+
+## 7. Key Technical Challenges & Solutions
+
+### Challenge 1: Large Workflow Files
+**Problem**: N8N workflows can be very large JSON files
+**Solution**: 
+- Use `virtual-react-json-diff` for performant rendering
+- Implement pagination or virtualization
+- Load workflows on-demand
+
+### Challenge 2: Complex Diff Logic
+**Problem**: Identifying meaningful changes vs noise
+**Solution**:
+- Use `json-diff-kit` with LCS algorithm
+- Filter out non-essential changes (timestamps, positions)
+- Focus only on functional changes
+
+### Challenge 3: Workflow Name Mapping
+**Problem**: Staging workflows have different names (staging- prefix)
+**Solution**:
+- Implement name normalization function
+- Build mapping table: `staging-workflow1` → `workflow1`
+- Use fuzzy matching for similar names
+
+### Challenge 4: Circular Dependency Detection
+**Problem**: Workflows might call each other in circles
+**Solution**:
+- Implement graph traversal algorithm
+- Detect cycles using DFS
+- Visualize with warnings
+
+---
+
+## 8. Security Considerations
+
+1. **GitHub Token Storage**: Never commit tokens; use environment variables
+2. **Token Permissions**: Request only necessary scopes (repo read/write)
+3. **Input Validation**: Sanitize all user inputs
+4. **Rate Limiting**: Respect GitHub API rate limits (5000 req/hour)
+5. **Branch Protection**: Don't allow direct pushes to main
+
+---
+
+## 9. Alternative Approaches
+
+### Option A: Browser Extension
+**Pros**: Direct GitHub integration, no hosting needed
+**Cons**: Limited by browser APIs, harder to distribute
+
+### Option B: GitHub Action / Bot
+**Pros**: Automatic on every push, no manual intervention
+**Cons**: Harder to build interactive UI, more complex setup
+
+### Option C: Desktop App (Electron)
+**Pros**: Full system access, offline capable
+**Cons**: Larger bundle size, platform-specific issues
+
+**Recommendation**: Start with web app (easiest to iterate and share)
+
+---
+
+## 10. Deployment Options
+
+### Recommended: Vercel or Netlify
+- Free tier available
+- Automatic deployments from GitHub
+- Built-in CI/CD
+- Custom domains
+- Serverless functions for API proxying
+
+### Alternative: Self-hosted
+- Docker container
+- VPS (DigitalOcean, AWS EC2)
+- More control but more maintenance
+
+---
+
+## 11. Example Workflow
+
+### User Journey:
+1. User opens the tool, enters GitHub repo URL
+2. Tool authenticates with GitHub (PAT or OAuth)
+3. Tool fetches all workflows from both branches
+4. Automatically extracts:
+   - All unique credentials
+   - All URLs/domains with differences highlighted
+   - Workflow call chains with visual comparison
+5. User reviews differences in each panel
+6. User selects which changes to keep:
+   - Check boxes for credentials
+   - Radio buttons for URLs (staging vs main)
+   - Drag-and-drop for workflow reordering
+7. User clicks "Create Merge Branch"
+8. Tool generates new branch with selected changes
+9. Tool creates PR for review
+10. User reviews PR in GitHub and merges to main
+
+---
+
+## 12. Future Enhancements
+
+### V2 Features:
+- AI-powered merge recommendations
+- Automated testing before merge
+- Rollback capabilities
+- Merge templates for common scenarios
+- Multi-repository support
+- Collaborative merging (multiple users)
+- Audit logs and history
+- Integration with N8N API for direct testing
+
+### V3 Features:
+- Version control for N8N workflows
+- Advanced analytics (execution stats)
+- Cost analysis (API calls, execution time)
+- Automated migration tools
+
+---
+
+## 13. Estimated Costs
+
+### Free Tier (Recommended to Start):
+- **GitHub**: Free (public repo) or Free tier (private)
+- **Vercel/Netlify**: Free for personal projects
+- **Development**: Your time only
+
+### Paid Options (If Scaling):
+- **Vercel Pro**: $20/month (if you need more performance)
+- **GitHub API**: Free up to 5000 req/hour
+- **Domain**: ~$10-15/year (optional)
+
+**Total**: $0-35/month
+
+---
+
+## 14. Resources & Learning
+
+### Documentation:
+- [N8N Workflow Export Docs](https://docs.n8n.io/workflows/export-import/)
+- [GitHub REST API Docs](https://docs.github.com/en/rest)
+- [shadcn/ui](https://ui.shadcn.com/)
+- [React Flow](https://reactflow.dev/)
+
+### Example Projects:
+- GitHub's own compare view
+- N8N's workflow import tool
+- GitLens VSCode extension (for diff inspiration)
+
+---
+
+## 15. Quick Start Commands
+
+```bash
+# Create new React + TypeScript project
+npm create vite@latest n8n-merge-tool -- --template react-ts
+
+# Install dependencies
+cd n8n-merge-tool
+npm install
+
+# Install UI libraries
+npx shadcn-ui@latest init
+npm install @octokit/rest
+npm install json-diff-kit virtual-react-json-diff
+npm install react-flow-renderer
+npm install zustand @tanstack/react-query
+
+# Start development server
+npm run dev
+```
+
+---
+
+## Conclusion
+
+This is a technically feasible and valuable tool that will significantly streamline your N8N workflow management. The combination of modern React tooling, GitHub API integration, and smart diff algorithms will create a professional, GitHub-like experience.
+
+**Key Success Factors**:
+1. Focus on the three core features first (credentials, domains, workflow chains)
+2. Use proven libraries rather than building from scratch
+3. Iterate based on real usage
+4. Keep the UI simple and focused on the merge decision
+
+**Timeline**: 4-6 weeks for MVP, 2-3 months for polished product
+
+Would you like me to start with a specific component or create a working prototype?
+
+
+# Wingm8n_FlowBridge - Complete Project Prompt for Vibe Coding Platforms
+
+## 🎯 Project Overview
+
+Create **Wingm8n_FlowBridge** - a stunning, production-ready web application for intelligently merging N8N workflows between staging and production branches in GitHub repositories.
+
+**Tagline**: "Bridge your workflows from staging to production with confidence"
+
+---
+
+## 🎨 Design Vision & Brand Identity
+
+### Logo Concept
+- **Primary Symbol**: A bridge icon connecting two workflow nodes
+- **Style**: Modern, minimal, tech-forward
+- **Color Scheme**: 
+  - Primary: Deep Navy/Slate (`#0f172a`, `#1e293b`)
+  - Accent: Vibrant Teal (`#14b8a6`) for "bridge" elements
+  - Success: Emerald (`#10b981`)
+  - Warning: Amber (`#f59e0b`)
+- **Typography**: 
+  - Headers: Inter or Geist Sans (bold, modern)
+  - Code/Mono: JetBrains Mono or Fira Code
+
+### Visual Identity
+- **Aesthetic**: GitHub Primer-inspired with modern glassmorphism touches
+- **Theme**: Dark mode primary, light mode optional
+- **Animations**: Smooth micro-interactions, subtle hover effects, satisfying transitions
+- **Components**: Rounded corners (12-16px), subtle shadows, clean borders
+
+---
+
+## 🏗️ Technical Architecture
+
+### Frontend Stack
+```
+Framework: Next.js 14+ (App Router)
+Language: TypeScript (strict mode)
+Styling: Tailwind CSS + shadcn/ui components
+State: Zustand or Jotai (lightweight state management)
+API Calls: TanStack Query (React Query) for data fetching
+Auth: NextAuth.js with GitHub provider
+Animations: Framer Motion for complex animations
+Icons: Lucide React
+```
+
+### Backend/API Stack
+```
+Runtime: Next.js API Routes (serverless functions)
+OR
+Framework: Node.js + Express (if you prefer separate backend)
+Database: PostgreSQL (via Supabase or Vercel Postgres)
+ORM: Prisma
+GitHub Integration: Octokit (@octokit/rest)
+Authentication: NextAuth.js server-side
+```
+
+### Project Structure
+```
+wingm8n-flowbridge/
+├── app/                          # Next.js App Router
+│   ├── (auth)/                   # Auth pages group
+│   │   ├── login/
+│   │   │   └── page.tsx         # Login screen
+│   │   └── callback/
+│   │       └── page.tsx         # GitHub OAuth callback
+│   ├── (dashboard)/             # Protected dashboard group
+│   │   ├── layout.tsx           # Dashboard shell with nav
+│   │   ├── page.tsx             # Repo selection screen
+│   │   ├── merge/
+│   │   │   └── [repo]/
+│   │   │       └── page.tsx    # Main merge interface
+│   │   └── settings/
+│   │       └── page.tsx        # User settings
+│   ├── api/                     # API routes
+│   │   ├── auth/[...nextauth]/
+│   │   │   └── route.ts        # NextAuth configuration
+│   │   ├── github/
+│   │   │   ├── repos/
+│   │   │   │   └── route.ts    # List user repos
+│   │   │   ├── branches/
+│   │   │   │   └── route.ts    # Get repo branches
+│   │   │   ├── workflows/
+│   │   │   │   └── route.ts    # Fetch workflow files
+│   │   │   └── merge/
+│   │   │       └── route.ts    # Create merge branch
+│   │   └── webhook/
+│   │       └── route.ts        # GitHub webhook handler
+│   ├── layout.tsx              # Root layout
+│   └── globals.css             # Global styles
+├── components/
+│   ├── ui/                     # shadcn/ui components
+│   │   ├── button.tsx
+│   │   ├── card.tsx
+│   │   ├── dialog.tsx
+│   │   ├── select.tsx
+│   │   ├── tabs.tsx
+│   │   └── ...
+│   ├── auth/
+│   │   ├── LoginScreen.tsx     # Main login page component
+│   │   └── GitHubButton.tsx    # GitHub OAuth button
+│   ├── dashboard/
+│   │   ├── RepoSelector.tsx    # Repository selection grid
+│   │   ├── BranchSelector.tsx  # Branch comparison selector
+│   │   └── Sidebar.tsx         # Dashboard navigation
+│   ├── merge/
+│   │   ├── CredentialPanel.tsx
+│   │   ├── URLPanel.tsx
+│   │   ├── WorkflowGraph.tsx   # Cytoscape.js workflow visualization
+│   │   ├── DiffViewer.tsx      # JSON diff display
+│   │   └── MergeControls.tsx   # Merge action buttons
+│   └── shared/
+│       ├── Logo.tsx            # Wingm8n_FlowBridge logo
+│       ├── LoadingSpinner.tsx
+│       └── Toast.tsx           # Notification system
+├── lib/
+│   ├── github/
+│   │   ├── client.ts           # Octokit wrapper
+│   │   ├── workflows.ts        # Workflow parsing logic
+│   │   └── merge.ts            # Merge operation logic
+│   ├── parsers/
+│   │   ├── credentials.ts      # Extract credentials from workflows
+│   │   ├── urls.ts             # Extract URLs/endpoints
+│   │   └── call-chains.ts      # Analyze executeWorkflow chains
+│   ├── utils/
+│   │   ├── normalize.ts        # Workflow normalization
+│   │   └── diff.ts             # JSON diffing utilities
+│   └── db/
+│       ├── prisma.ts           # Prisma client
+│       └── queries.ts          # Database queries
+├── hooks/
+│   ├── useGitHubRepos.ts
+│   ├── useWorkflowData.ts
+│   └── useMergeState.ts
+├── types/
+│   ├── workflow.ts             # N8N workflow types
+│   ├── github.ts               # GitHub API types
+│   └── index.ts
+├── prisma/
+│   └── schema.prisma           # Database schema
+├── public/
+│   ├── logo.svg
+│   └── og-image.png
+├── .env.local.example
+├── next.config.js
+├── tailwind.config.ts
+└── package.json
+```
+
+---
+
+## 🎬 Phase 1: Authentication & Onboarding
+
+### Screen 1: Login Page (`/login`)
+
+**Design Requirements**:
+```
+Layout: Centered card on gradient background
+Background: Animated gradient (navy → teal → slate)
+Card: Glassmorphism effect, subtle blur, rounded-2xl
+Logo: Center top, animated entrance (scale + fade)
+Headline: "Bridge Your N8N Workflows"
+Subheadline: "Merge staging to production with intelligence and confidence"
+CTA Button: Large, prominent "Continue with GitHub" button
+  - Icon: GitHub logo
+  - Style: Gradient background, hover lift effect
+  - Animation: Pulse on hover
+Footer: Small text about security and data privacy
+```
+
+**Component Code Style**:
+```tsx
+'use client';
+
+import { motion } from 'framer-motion';
+import { Github } from 'lucide-react';
+import { signIn } from 'next-auth/react';
+import { Logo } from '@/components/shared/Logo';
+import { Button } from '@/components/ui/button';
+
+export default function LoginPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-teal-900 to-slate-900 p-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md"
+      >
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-8 shadow-2xl">
+          {/* Logo */}
+          <div className="flex justify-center mb-6">
+            <Logo className="w-16 h-16" />
+          </div>
+
+          {/* Headline */}
+          <h1 className="text-3xl font-bold text-center text-white mb-2">
+            Bridge Your N8N Workflows
+          </h1>
+          <p className="text-center text-white/70 mb-8">
+            Merge staging to production with intelligence and confidence
+          </p>
+
+          {/* GitHub Button */}
+          <Button
+            onClick={() => signIn('github', { callbackUrl: '/dashboard' })}
+            className="w-full h-12 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-semibold rounded-xl flex items-center justify-center gap-3 transition-all hover:scale-105 shadow-lg"
+          >
+            <Github className="w-5 h-5" />
+            Continue with GitHub
+          </Button>
+
+          {/* Features List */}
+          <div className="mt-8 space-y-3">
+            {['Smart credential mapping', 'URL comparison', 'Call-chain analysis'].map((feature) => (
+              <div key={feature} className="flex items-center gap-2 text-sm text-white/60">
+                <div className="w-1.5 h-1.5 rounded-full bg-teal-400" />
+                {feature}
+              </div>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <p className="mt-8 text-xs text-center text-white/40">
+            We never store your code. All processing happens in-memory.
+          </p>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+```
+
+### Screen 2: Repository Selection (`/dashboard`)
+
+**Design Requirements**:
+```
+Layout: Dashboard with sidebar navigation
+Header: Logo, user avatar (dropdown), notifications
+Sidebar: 
+  - Dashboard (active)
+  - Settings
+  - Documentation
+  - Logout
+Main Content:
+  - Search bar: "Search your repositories..."
+  - Filter tabs: All / N8N Workflows / Recent
+  - Repository Grid: Cards with repo info
+    - Repo name
+    - Description
+    - Stars count
+    - Last updated
+    - "Select" button
+  - Empty State: Beautiful illustration if no repos found
+```
+
+**Repository Card Component**:
+```tsx
+'use client';
+
+import { Star, GitBranch, Clock } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+
+export function RepoCard({ repo, onSelect }) {
+  return (
+    <Card className="group p-6 hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer border-slate-200 hover:border-teal-400">
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-slate-900 group-hover:text-teal-600 transition-colors">
+            {repo.name}
+          </h3>
+          <p className="text-sm text-slate-500 mt-1 line-clamp-2">
+            {repo.description || 'No description'}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4 text-xs text-slate-500 mb-4">
+        <div className="flex items-center gap-1">
+          <Star className="w-3 h-3" />
+          {repo.stargazers_count}
+        </div>
+        <div className="flex items-center gap-1">
+          <GitBranch className="w-3 h-3" />
+          {repo.default_branch}
+        </div>
+        <div className="flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          {formatDate(repo.updated_at)}
+        </div>
+      </div>
+
+      <Button
+        onClick={() => onSelect(repo)}
+        className="w-full bg-gradient-to-r from-slate-900 to-slate-700 hover:from-slate-800 hover:to-slate-600"
+      >
+        Select Repository
+      </Button>
+    </Card>
+  );
+}
+```
+
+---
+
+## 🎬 Phase 2: Branch Selection & Comparison
+
+### Screen 3: Branch Selector (Modal/Drawer after repo selection)
+
+**Design Requirements**:
+```
+Component: Slide-up modal or right drawer
+Title: "Configure Merge Parameters"
+Fields:
+  1. Staging Branch Selector
+     - Dropdown with all branches
+     - Search/filter functionality
+     - Shows branch info (last commit, author)
+  
+  2. Main/Production Branch Selector
+     - Similar to staging selector
+  
+  3. Workflow Prefix Input
+     - Text input for "staging-" or custom prefix
+     - Help text: "Prefix used in staging workflow names"
+  
+  4. Merge Strategy Radio Buttons
+     - Staging Wins (prefer staging logic)
+     - Main Wins (prefer production logic)
+     - Manual Review (user decides each conflict)
+
+Action Buttons:
+  - Cancel (ghost)
+  - Continue to Merge Dashboard (primary gradient)
+```
+
+---
+
+## 🎬 Phase 3: Main Merge Dashboard
+
+### Screen 4: Merge Interface (`/merge/[repo]`)
+
+**Layout Structure**:
+```
+┌─────────────────────────────────────────────────────┐
+│ Header: Repo name | Branch badges | Progress steps  │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│ ┌─── Security Guardrails Panel ───────────────┐   │
+│ │ [✓] Ignore position  [✓] Sanitize secrets   │   │
+│ │ [✓] Ignore timestamps [✓] Set active:false  │   │
+│ └──────────────────────────────────────────────┘   │
+│                                                     │
+│ ┌─── Phase Navigation Tabs ────────────────────┐  │
+│ │  [1] Discovery  [2] Analysis  [3] Mapping    │  │
+│ │  [4] Preview    [5] Deploy                   │  │
+│ └──────────────────────────────────────────────┘  │
+│                                                     │
+│ [Tab Content Area - Changes based on active phase] │
+│                                                     │
+│ ┌─── Phase 1: Discovery ────────────────────────┐ │
+│ │ Stats Cards:                                  │ │
+│ │  - Staging Workflows (count)                  │ │
+│ │  - Main Workflows (count)                     │ │
+│ │  - Matched Pairs (count)                      │ │
+│ │  - New Workflows (count)                      │ │
+│ │                                               │ │
+│ │ Side-by-side file lists with match indicators │ │
+│ └───────────────────────────────────────────────┘ │
+│                                                     │
+│ ┌─── Phase 2: Extraction & Analysis ────────────┐ │
+│ │ 3-Column Layout:                              │ │
+│ │  1. Credential References                     │ │
+│ │  2. URLs & Endpoints                          │ │
+│ │  3. Security Risks                            │ │
+│ │                                               │ │
+│ │ Interactive Workflow Call-Chain Graph         │ │
+│ │ (Cytoscape.js visualization)                  │ │
+│ └───────────────────────────────────────────────┘ │
+│                                                     │
+│ ┌─── Phase 3: Mapping Layer ────────────────────┐ │
+│ │ 2-Column Layout:                              │ │
+│ │  Left: Workflow Mappings                      │ │
+│ │  Right: Credential ID Resolution              │ │
+│ │                                               │ │
+│ │ Structural Diff Viewer (3-way):              │ │
+│ │  - Staging (normalized)                       │ │
+│ │  - Main (normalized)                          │ │
+│ │  - Delta (jsondiffpatch visualization)        │ │
+│ └───────────────────────────────────────────────┘ │
+│                                                     │
+│ ┌─── Phase 4: Preview & Deploy ─────────────────┐ │
+│ │ Merged Output Preview with file selector      │ │
+│ │ GraphQL Mutation payload (ready to copy)      │ │
+│ │ Pre-merge health checks                       │ │
+│ │ [Deploy to Feature Branch] button             │ │
+│ └───────────────────────────────────────────────┘ │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+**Key UI Components to Build**:
+
+1. **StatsCard Component**
+```tsx
+export function StatsCard({ label, value, trend, color = 'blue' }) {
+  const colors = {
+    blue: 'bg-blue-50 border-blue-200 text-blue-700',
+    amber: 'bg-amber-50 border-amber-200 text-amber-700',
+    emerald: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+    purple: 'bg-purple-50 border-purple-200 text-purple-700'
+  };
+
+  return (
+    <Card className={`${colors[color]} border-2 p-6`}>
+      <div className="text-3xl font-bold mb-1">{value}</div>
+      <div className="text-sm font-medium">{label}</div>
+      {trend && <div className="text-xs mt-2 opacity-70">{trend}</div>}
+    </Card>
+  );
+}
+```
+
+2. **Phase Stepper Component**
+```tsx
+export function PhaseStepper({ currentPhase, phases, onPhaseChange }) {
+  return (
+    <div className="flex items-center justify-between">
+      {phases.map((phase, idx) => (
+        <React.Fragment key={phase.id}>
+          <button
+            onClick={() => onPhaseChange(phase.id)}
+            className={`flex items-center gap-2 ${
+              currentPhase === phase.id
+                ? 'text-slate-900 font-medium'
+                : currentPhase > phase.id
+                ? 'text-emerald-600'
+                : 'text-slate-400'
+            }`}
+          >
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
+                currentPhase === phase.id
+                  ? 'bg-slate-900 text-white'
+                  : currentPhase > phase.id
+                  ? 'bg-emerald-500 text-white'
+                  : 'bg-slate-200'
+              }`}
+            >
+              {currentPhase > phase.id ? '✓' : idx + 1}
+            </div>
+            <span className="hidden md:inline">{phase.label}</span>
+          </button>
+          {idx < phases.length - 1 && (
+            <div className="flex-1 h-px bg-slate-300 mx-4" />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+```
+
+3. **Workflow Graph Component** (React wrapper for Cytoscape.js)
+```tsx
+'use client';
+
+import { useEffect, useRef } from 'react';
+import cytoscape from 'cytoscape';
+
+export function WorkflowGraph({ nodes, edges }) {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const cy = cytoscape({
+      container: containerRef.current,
+      elements: { nodes, edges },
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': (ele) =>
+              ele.data('branch') === 'staging' ? '#f59e0b' : '#10b981',
+            'label': 'data(label)',
+            'color': '#1e293b',
+            'font-size': 10,
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'width': 40,
+            'height': 40
+          }
+        },
+        {
+          selector: 'edge',
+          style: {
+            'curve-style': 'bezier',
+            'target-arrow-shape': 'triangle',
+            'line-color': '#94a3b8',
+            'target-arrow-color': '#64748b',
+            'width': 2
+          }
+        }
+      ],
+      layout: { name: 'cose', animate: true, fit: true, padding: 30 }
+    });
+
+    return () => cy.destroy();
+  }, [nodes, edges]);
+
+  return <div ref={containerRef} className="w-full h-[400px] rounded-xl border border-slate-200" />;
+}
+```
+
+---
+
+## 🔐 Authentication Setup
+
+### NextAuth Configuration (`app/api/auth/[...nextauth]/route.ts`)
+
+```typescript
+import NextAuth from 'next-auth';
+import GitHubProvider from 'next-auth/providers/github';
+
+export const authOptions = {
+  providers: [
+    GitHubProvider({
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          scope: 'read:user user:email repo' // Permissions we need
+        }
+      }
+    })
+  ],
+  callbacks: {
+    async jwt({ token, account }) {
+      if (account) {
+        token.accessToken = account.access_token;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      session.accessToken = token.accessToken;
+      return session;
+    }
+  },
+  pages: {
+    signIn: '/login',
+    error: '/login'
+  }
+};
+
+const handler = NextAuth(authOptions);
+export { handler as GET, handler as POST };
+```
+
+### Environment Variables (`.env.local`)
+```env
+# GitHub OAuth App Credentials
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+
+# NextAuth
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=generate_random_secret_here
+
+# Database
+DATABASE_URL=postgresql://...
+
+# Optional: For production webhooks
+WEBHOOK_SECRET=your_webhook_secret
+```
+
+---
+
+## 📦 Key Dependencies
+
+```json
+{
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "next-auth": "^4.24.0",
+    "@octokit/rest": "^21.0.0",
+    "@tanstack/react-query": "^5.51.0",
+    "zustand": "^4.5.0",
+    "framer-motion": "^11.3.0",
+    "lucide-react": "^0.445.0",
+    "cytoscape": "^3.30.0",
+    "jsondiffpatch": "^0.6.0",
+    "tailwindcss": "^3.4.0",
+    "@radix-ui/react-dialog": "^1.1.0",
+    "@radix-ui/react-dropdown-menu": "^2.1.0",
+    "@radix-ui/react-select": "^2.1.0",
+    "@radix-ui/react-tabs": "^1.1.0",
+    "prisma": "^5.18.0",
+    "@prisma/client": "^5.18.0"
+  }
+}
+```
+
+---
+
+## 🚀 Development Instructions
+
+### Initial Setup Commands
+```bash
+# Create Next.js app
+npx create-next-app@latest wingm8n-flowbridge --typescript --tailwind --app --use-npm
+
+# Install shadcn/ui
+npx shadcn-ui@latest init
+
+# Add required shadcn components
+npx shadcn-ui@latest add button card dialog select tabs dropdown-menu
+
+# Install other dependencies
+npm install next-auth @octokit/rest @tanstack/react-query zustand framer-motion cytoscape jsondiffpatch
+
+# Initialize Prisma
+npx prisma init
+
+# Set up GitHub OAuth App at https://github.com/settings/developers
+```
+
+### Database Schema (Prisma)
+```prisma
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  githubId      String    @unique
+  accessToken   String?   @db.Text
+  createdAt     DateTime  @default(now())
+  merges        Merge[]
+}
+
+model Merge {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  repoOwner       String
+  repoName        String
+  stagingBranch   String
+  mainBranch      String
+  featureBranch   String
+  status          String   // pending, completed, failed
+  commitSha       String?
+  pullRequestUrl  String?
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+}
+```
+
+---
+
+## ✨ UI/UX Polish Requirements
+
+1. **Animations**:
+   - Page transitions with Framer Motion
+   - Skeleton loaders while fetching data
+   - Success animations on merge completion
+   - Smooth scroll behavior
+
+2. **Accessibility**:
+   - ARIA labels on all interactive elements
+   - Keyboard navigation support
+   - Focus indicators
+   - Screen reader friendly
+
+3. **Responsive Design**:
+   - Mobile: Stacked layouts, bottom sheets
+   - Tablet: 2-column layouts
+   - Desktop: Full multi-column experience
+
+4. **Loading States**:
+   - Shimmer effects for content loading
+   - Progress indicators for long operations
+   - Optimistic UI updates where possible
+
+5. **Error Handling**:
+   - Friendly error messages
+   - Retry mechanisms
+   - Fallback UI for failures
+
+---
+
+## 🎯 MVP Feature Checklist
+
+### Phase 1 (Core Functionality)
+- [ ] GitHub OAuth login
+- [ ] Repository selection
+- [ ] Branch comparison UI
+- [ ] Workflow file discovery
+- [ ] Credential extraction
+- [ ] URL detection
+- [ ] Workflow call-chain analysis
+
+### Phase 2 (Merge Logic)
+- [ ] Mapping interface
+- [ ] Conflict resolution UI
+- [ ] JSON diff visualization
+- [ ] Merge preview
+- [ ] Feature branch creation
+- [ ] Pull request generation
+
+### Phase 3 (Polish)
+- [ ] Beautiful animations
+- [ ] Toast notifications
+- [ ] Error boundaries
+- [ ] Loading states
+- [ ] Mobile responsive
+- [ ] Dark mode
+- [ ] Documentation page
+
+---
+
+## 🎨 Color Palette Reference
+
+```css
+/* Primary Colors */
+--navy-900: #0f172a;
+--slate-800: #1e293b;
+--slate-700: #334155;
+
+/* Accent Colors */
+--teal-500: #14b8a6;
+--teal-600: #0d9488;
+
+/* Status Colors */
+--emerald-500: #10b981; /* Success */
+--amber-500: #f59e0b;   /* Warning */
+--red-500: #ef4444;     /* Error */
+--blue-500: #3b82f6;    /* Info */
+
+/* Neutral Colors */
+--slate-50: #f8fafc;
+--slate-100: #f1f5f9;
+--slate-200: #e2e8f0;
+--slate-500: #64748b;
+```
+
+---
+
+## 📝 Copy & Paste This Prompt to Your Vibe Coding Platform
+
+**Prompt Start Here** ⬇️
+
+---
+
+Build a complete Next.js 14 web application called **Wingm8n_FlowBridge** for merging N8N workflows between GitHub branches.
+
+**Tech Stack**: Next.js 14 (App Router), TypeScript, Tailwind CSS, shadcn/ui, NextAuth.js (GitHub OAuth), Framer Motion, TanStack Query, Cytoscape.js, jsondiffpatch
+
+**Project Structure**: Follow the folder structure detailed above with:
+- `/app/(auth)/login` - Beautiful login screen with GitHub OAuth
+- `/app/(dashboard)` - Protected dashboard with repo selection
+- `/app/(dashboard)/merge/[repo]` - Main merge interface with 5 phases
+- `/components` - Reusable UI components
+- `/lib` - GitHub client, parsers, utilities
+
+**Authentication Flow**:
+1. Login screen with gradient background, glassmorphism card, and "Continue with GitHub" button
+2. GitHub OAuth integration with repo scope
+3. Callback handling and session management
+4. Protected routes using NextAuth middleware
+
+**Main Features**:
+1. **Repository Selection**: Grid of user's GitHub repos with search/filter
+2. **Branch Configuration**: Modal to select staging/main branches and merge strategy
+3. **5-Phase Merge Dashboard**:
+   - Phase 1: Discovery (scan branches, show file counts)
+   - Phase 2: Analysis (credentials, URLs, security risks, call-chain graph)
+   - Phase 3: Mapping (workflow → workflow mapping, credential ID resolution, diff viewer)
+   - Phase 4: Preview (merged output, GraphQL payload)
+   - Phase 5: Deploy (create feature branch, generate PR)
+
+**Design Requirements**:
+- **Color Scheme**: Navy primary (#0f172a), teal accent (#14b8a6), emerald success (#10b981)
+- **Logo**: Bridge icon connecting workflow nodes
+- **Animations**: Smooth transitions, hover effects, success states
+- **Components**: Use shadcn/ui for buttons, cards, dialogs, selects, tabs
+- **Dark Mode**: Primary theme with optional light mode
+- **Responsive**: Mobile-first with tablet/desktop optimizations
+
+**Key UI Components to Build**:
+1. LoginScreen with animated gradient background
+2. RepoCard with hover effects and stats
+3. BranchSelector modal/drawer
+4. PhaseStepper with progress indication
+5. StatsCard for metrics display
+6. WorkflowGraph using Cytoscape.js
+7. DiffViewer with jsondiffpatch
+8. MergeControls with action buttons
+
+**API Routes Needed**:
+- `/api/auth/[...nextauth]` - NextAuth config
+- `/api/github/repos` - List user repos
+- `/api/github/branches` - Get repo branches
+- `/api/github/workflows` - Fetch workflow JSON files
+- `/api/github/merge` - Create merge branch and PR
+
+**Environment Variables**:
+- GITHUB_CLIENT_ID
+- GITHUB_CLIENT_SECRET
+- NEXTAUTH_SECRET
+- DATABASE_URL (PostgreSQL)
+
+**Start with**:
+1. Create project structure
+2. Set up NextAuth with GitHub provider
+3. Build login screen with stunning UI
+4. Create dashboard layout with sidebar
+5. Implement repo selection grid
+6. Build branch configuration modal
+
+Use the code examples provided above as reference for component structure and styling. Prioritize beautiful, modern UI with smooth animations and excellent UX.
+
+---
+
+**END OF PROMPT** ⬆️
+
+To build a professional **n8n-to-GitHub merge platform**, you need to implement a sophisticated logic layer that separates "canvas noise" from functional automation code. Below is the technical roadmap, integrated technologies, and safety protocols based on the provided sources.
+
+### 1. How to Build It: The Architectural Flow
+You should architect the system in four distinct phases to handle the complexity of visual automation JSON:
+
+*   **Phase 1: Discovery and Deduplication:** Use the **GitHub Git Trees API** (`GET /git/trees/:sha?recursive=1`) to list all workflows in both the `staging` and `main` branches. Use **GraphQL aliasing** to batch-fetch the full JSON content in one network call to meet performance benchmarks.
+*   **Phase 2: Dependency & Reference Extraction:** Implement a recursive scanner to extract **credential IDs** from `nodes[i].credentials` and **URLs** from `parameters.url` or `parameters.path`.
+*   **Phase 3: The "Mapping Layer":** Build a mapping logic that identifies that `staging-workflow-A` is the same as the production `workflow-A` by stripping environment prefixes.
+*   **Phase 4: Transactional Deployment:** Instead of merging branches directly, use the **GraphQL `createCommitOnBranch` mutation** to upload the resolved JSON files to a new **feature/merge branch** in a single atomic operation.
+
+### 2. Technology Stack for GitHub Integration
+To handle large repositories (500+ workflows) and complex JSON, utilize these specific technologies:
+
+*   **Authentication:** Use a **GitHub App** rather than OAuth. GitHub Apps provide **fine-grained permissions** (e.g., "Contents: Write") and higher **rate limits**—up to 15,000 requests per hour.
+*   **JSON Comparison:** Use **`jsondiffpatch`** or **`json-diff-kit`**. These libraries identify structural changes rather than line changes, allowing you to correctly track node configuration shifts even if nodes were reordered in the array.
+*   **Graph Visualization:** Use **React Flow** or **Cytoscape.js** to visualize the call chains. This helps you see if Workflow A correctly calls Workflow B after the merge.
+*   **State Management:** Use **TanStack Query** for fetching GitHub data (server state) and **Zustand** for the interactive merge session where you toggle which URLs and credentials to keep.
+
+### 3. Critical Pitfalls and Security
+When dealing with n8n and GitHub, you must be careful of these four issues:
+
+*   **Position Noise:** Moving a node on the n8n canvas changes its `x, y` coordinates in the JSON, creating "noise" in Git. **Implementation Tip:** Your normalization layer should strip the `position` object before comparing logic to keep your Git history clean.
+*   **The Reference Gap:** Credential IDs and Workflow IDs are **instance-specific**; staging IDs are meaningless in production. Your tool must replace these IDs with valid production IDs during the merge.
+*   **Hardcoded Secrets:** Users often import cURL commands into HTTP nodes, which can leave **Authorization headers** hardcoded in the JSON. Implement a **sanitization layer** to detect and strip these before committing.
+*   **Token Security:** Never store GitHub tokens in `localStorage`. Manage them in **secure session states** or memory-only stores to prevent theft via XSS.
+
+### 4. Linking Your Website with GitHub
+To link your website, implement the **GitHub App installation flow**. This allows users to grant your platform access to specific repositories. Once linked, use the **Installation Access Token** to call the Git Database APIs.
+
+### 5. Vibe Coding Prompt
+Use this prompt for platforms like Lovable, Replit, or Bolt to generate the foundational logic:
+
+> "Build a React-based GitHub Merge UI for n8n workflow JSON files. **Tech stack:** shadcn/ui, TanStack Query, Zustand, and `jsondiffpatch`. 
+> 
+> **Core Features:**
+> 1. Use **GitHub GraphQL API** with **aliasing** to fetch all `.json` files from 'staging' and 'main' branches simultaneously.
+> 2. Create an **Analysis Engine** that scans the JSON for `nodes.credentials` and `parameters.url`. 
+> 3. **Deduplicate credentials** by name/type and provide an interactive toggle to choose which ID to keep for the merge.
+> 4. Implement **Call-Chain Tracking** for `executeWorkflow` nodes; detect 'staging-' prefixes and suggest automated renaming for production.
+> 5. Use the **`createCommitOnBranch` mutation** to push the merged result to a new 'merge-branch' atomically.
+> 6. Add a **Normalization Filter** to ignore `position` coordinates and `updatedAt` timestamps during the diffing process to reduce canvas noise.
+> 7. Set all merged production workflows to `active: false` as a safety default."
+
+**Analogy:** Building this system is like creating a **Smart Translation Hub** for two different cities. You aren't just moving furniture (the code); you are updating the **address books** (IDs) and **power adapters** (Credentials) so that the furniture works immediately when it arrives at the new house.
+
+# Wingm8n_FlowBridge - Project TODO
+
+## Phase 1: Foundation & Authentication
+- [x] Project initialization with web-db-user scaffold
+- [x] Design tokens and brand identity setup
+- [x] GitHub OAuth integration with secure session management
+- [x] Stunning login screen with glassmorphism design
+- [x] Session persistence and logout functionality
+- [x] Protected routes and authentication guards
+
+## Phase 2: GitHub Integration
+- [ ] GitHub API integration service
+- [ ] Repository fetching and branch detection
+- [ ] Staging and main branch comparison
+- [ ] Real-time branch sync capabilities
+- [ ] Webhook support for branch updates (optional)
+
+## Phase 3: N8N Workflow Analysis
+- [ ] Workflow JSON parser service
+- [ ] Credential extraction and deduplication
+- [ ] Credential comparison between branches
+- [ ] Unique credential highlighting (staging-only)
+- [ ] Credential filtering and search
+
+## Phase 4: Domain & URL Detection
+- [ ] URL extraction service from workflow nodes
+- [ ] HTTP/HTTPS endpoint detection
+- [ ] Webhook URL detection
+- [ ] Domain comparison and diff viewer
+- [ ] Side-by-side URL comparison UI
+- [ ] Batch URL selection for merge
+
+## Phase 5: Workflow Call Chain Analysis
+- [ ] Workflow call chain parser
+- [ ] "Execute Workflow" node detection
+- [ ] Call chain visualization (graph/flow diagram)
+- [ ] Staging vs main call structure comparison
+- [ ] Circular dependency detection
+- [ ] Workflow naming convention handling (staging- prefix)
+
+## Phase 6: Dashboard & Core UI
+- [x] Dashboard layout with sidebar navigation
+- [x] Branch selector component
+- [x] Sync status indicator
+- [x] Credentials panel (placeholder)
+- [x] Domains panel (placeholder)
+- [x] Workflow call chain panel (placeholder)
+- [x] Responsive design for mobile/tablet
+
+## Phase 7: Merge & Conflict Resolution
+- [ ] Interactive diff viewer
+- [ ] Granular merge value selection
+- [ ] Conflict resolver component
+- [ ] Merge preview panel
+- [ ] Merge branch creation workflow
+- [ ] Pull request generation
+
+## Phase 8: Advanced Features
+- [ ] Batch operations for multiple workflows
+- [ ] Merge history and audit trail
+- [ ] Undo/rollback capabilities
+- [ ] Export merge decisions as JSON
+- [ ] Notification system for merge status
+- [ ] Performance optimization for large workflows
+
+## Phase 9: Testing & Documentation
+- [ ] Unit tests for core services
+- [ ] Integration tests for GitHub API
+- [ ] E2E tests for merge workflow
+- [ ] API documentation
+- [ ] User guide and setup instructions
+- [ ] Deployment documentation
+
+## Design & UX
+- [x] Brand identity defined (colors, typography, spacing)
+- [ ] Component library setup (shadcn/ui)
+- [ ] Dark mode theme implementation
+- [ ] Accessibility compliance (WCAG 2.1 AA)
+- [ ] Micro-interactions and animations
+- [ ] Loading states and skeleton screens
+- [ ] Error handling and user feedback
+
+## Infrastructure
+- [ ] GitHub secrets configuration
+- [ ] Environment variables setup
+- [ ] Database schema for storing merge history
+- [ ] S3 storage for workflow backups (optional)
+- [ ] CI/CD pipeline setup
+- [ ] Production deployment configuration
+
+## Phase 2.5: GitHub Repository Selection
+- [x] GitHub API service for fetching user repositories
+- [x] Repository selection page with filtering and search
+- [x] Support for public and private repositories
+- [x] Repository context and state management
+- [ ] Branch detection (staging/main)
+- [ ] Workflow file discovery in branches
+- [ ] Repository persistence in session/database
+
+
+live
+
+Jump to live
+
+Task progress
+
+6 / 6
+Create GitHub API service and repository fetching
+Build repository selection page with filtering and search
+Implement repository context and state management
+Add branch detection and workflow file discovery
+Integrate repository selection into dashboard navigation
+Perfect! I can see the dashboard is displaying correctly with the "Change Repo" button in the header and the repository status showing "No repository selected" in the sidebar. Now I need to write unit tests for the GitHub API service to ensure everything works correctly before delivering to you.

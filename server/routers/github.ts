@@ -12,7 +12,7 @@ export const githubRouter = router({
       z.object({
         page: z.number().min(1).default(1),
         perPage: z.number().min(1).max(100).default(30),
-        affiliation: z.enum(['owner', 'collaborator', 'organization_member']).default('owner'),
+        affiliation: z.string().default('owner,collaborator,organization_member'),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -42,8 +42,17 @@ export const githubRouter = router({
           input.affiliation
         );
 
+        const enrichedRepos = result.repos.map(repo => ({
+          ...repo,
+          repoType: repo.owner.login === ctx.user?.githubUsername
+            ? 'personal'
+            : repo.permissions?.admin
+            ? 'organization'
+            : 'collaborative'
+        }));
+
         return {
-          repositories: result.repos,
+          repositories: enrichedRepos,
           total: result.total,
           page: input.page,
           perPage: input.perPage,

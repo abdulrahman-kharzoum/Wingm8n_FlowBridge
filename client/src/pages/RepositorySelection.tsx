@@ -19,7 +19,7 @@ import {
   ChevronLeft,
 } from 'lucide-react';
 
-type RepositoryType = 'all' | 'owned' | 'collaborated';
+type RepositoryType = 'all' | 'personal' | 'organization' | 'collaborative';
 
 export default function RepositorySelection() {
   const [, navigate] = useLocation();
@@ -28,14 +28,12 @@ export default function RepositorySelection() {
   const [repoType, setRepoType] = useState<RepositoryType>('all');
   const [page, setPage] = useState(1);
 
-  // Determine affiliation based on selected type
-  const affiliation = repoType === 'owned' ? 'owner' : repoType === 'collaborated' ? 'collaborator' : 'owner';
-
+  // Default to fetching all accessible repos
   const { data: reposData, isLoading, error } = trpc.github.listRepositories.useQuery(
     {
       page,
-      perPage: 20,
-      affiliation: affiliation as any,
+      perPage: 100, // Fetch more to allow client-side filtering if needed, or pagination
+      affiliation: 'owner,collaborator,organization_member',
     },
     {
       enabled: true,
@@ -45,12 +43,27 @@ export default function RepositorySelection() {
   // Filter repositories based on search term
   const filteredRepositories = useMemo(() => {
     if (!reposData?.repositories) return [];
-    return reposData.repositories.filter((repo) =>
-      repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      repo.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (repo.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
-    );
-  }, [reposData?.repositories, searchTerm]);
+    return reposData.repositories.filter((repo: any) => {
+      const matchesSearch =
+        repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        repo.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (repo.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
+
+      if (!matchesSearch) return false;
+
+      if (repoType === 'all') return true;
+      return repo.repoType === repoType;
+    });
+  }, [reposData?.repositories, searchTerm, repoType]);
+
+  const getBadgeColor = (type: string) => {
+    switch (type) {
+      case 'personal': return 'bg-blue-100 text-blue-700 border-blue-300';
+      case 'organization': return 'bg-purple-100 text-purple-700 border-purple-300';
+      case 'collaborative': return 'bg-teal-100 text-teal-700 border-teal-300';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
 
   const handleSelectRepository = async (repo: any) => {
     // Set the selected repository
@@ -109,15 +122,19 @@ export default function RepositorySelection() {
             <TabsList className="bg-slate-700/30 border border-slate-600/30">
               <TabsTrigger value="all" className="flex items-center gap-2">
                 <Globe className="w-4 h-4" />
-                All Repositories
+                All
               </TabsTrigger>
-              <TabsTrigger value="owned" className="flex items-center gap-2">
+              <TabsTrigger value="personal" className="flex items-center gap-2">
                 <Code2 className="w-4 h-4" />
-                Owned
+                Personal
               </TabsTrigger>
-              <TabsTrigger value="collaborated" className="flex items-center gap-2">
+              <TabsTrigger value="organization" className="flex items-center gap-2">
                 <Github className="w-4 h-4" />
-                Collaborated
+                Organization
+              </TabsTrigger>
+              <TabsTrigger value="collaborative" className="flex items-center gap-2">
+                <Github className="w-4 h-4" />
+                Collaborative
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -178,6 +195,11 @@ export default function RepositorySelection() {
                         {repo.name}
                       </h3>
                     </div>
+                    {(repo as any).repoType && (
+                       <span className={`text-[10px] px-2 py-0.5 rounded-full border ${getBadgeColor((repo as any).repoType)}`}>
+                        {(repo as any).repoType}
+                      </span>
+                    )}
                     <p className="text-xs text-slate-400 truncate">{repo.full_name}</p>
                   </div>
                   {repo.private ? (

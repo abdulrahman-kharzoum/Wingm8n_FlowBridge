@@ -13,7 +13,152 @@ import type {
   CredentialDiff,
   DomainDiff,
   WorkflowCallDiff,
+  MetadataDiff,
+  NodeDiff,
+  ParameterDiff,
 } from '../types/workflow.types';
+
+/**
+ * Extract workflow metadata
+ */
+export function extractMetadata(workflow: N8NWorkflow): Record<string, any> {
+  return {
+    name: workflow.name,
+    id: workflow.id, // Only present if saved
+    versionId: workflow.versionId, // Some versions use this
+    active: workflow.active,
+    createdAt: workflow.createdAt,
+    updatedAt: workflow.updatedAt,
+    tags: workflow.tags, // Array of tags
+  };
+}
+
+/**
+ * Compare workflow metadata
+ */
+export function compareMetadata(
+  stagingMetadata: Record<string, any>,
+  mainMetadata: Record<string, any>
+): MetadataDiff[] {
+  const keys = new Set([...Object.keys(stagingMetadata), ...Object.keys(mainMetadata)]);
+  const diffs: MetadataDiff[] = [];
+
+  keys.forEach((key) => {
+    // Skip if both are undefined/null
+    if (stagingMetadata[key] === undefined && mainMetadata[key] === undefined) return;
+
+    // Simple equality check (works for primitives, need JSON.stringify for objects/arrays like tags)
+    const stagingVal = stagingMetadata[key];
+    const mainVal = mainMetadata[key];
+    
+    let isDifferent = stagingVal !== mainVal;
+    
+    if (typeof stagingVal === 'object' || typeof mainVal === 'object') {
+        isDifferent = JSON.stringify(stagingVal) !== JSON.stringify(mainVal);
+    }
+
+    if (isDifferent) {
+      diffs.push({
+        key,
+        stagingValue: stagingVal,
+        mainValue: mainVal,
+        isDifferent: true,
+      });
+    }
+  });
+
+  return diffs;
+}
+
+/**
+ * Compare nodes and detect parameter changes
+ */
+export function compareNodes(
+  stagingWorkflow: N8NWorkflow,
+  mainWorkflow: N8NWorkflow
+): NodeDiff[] {
+  const diffs: NodeDiff[] = [];
+  const stagingNodes = stagingWorkflow.nodes || [];
+  const mainNodes = mainWorkflow.nodes || [];
+
+  // Map by name (or ID if needed, but N8N often relies on names for connections, though ID is unique)
+  // The user prompt example shows name based matching ("respond.io comment nodes")
+  const stagingNodeMap = new Map(stagingNodes.map(n => [n.name, n]));
+  const mainNodeMap = new Map(mainNodes.map(n => [n.name, n]));
+
+  const allNames = new Set([...stagingNodeMap.keys(), ...mainNodeMap.keys()]);
+
+  allNames.forEach(name => {
+    const stagingNode = stagingNodeMap.get(name);
+    const mainNode = mainNodeMap.get(name);
+
+    if (stagingNode && !mainNode) {
+        diffs.push({
+            nodeName: name,
+            nodeType: stagingNode.type,
+            changeType: 'added'
+        });
+    } else if (!stagingNode && mainNode) {
+        diffs.push({
+            nodeName: name,
+            nodeType: mainNode.type,
+            changeType: 'removed'
+        });
+    } else if (stagingNode && mainNode) {
+        // Modified - check parameters
+        const paramDiffs: ParameterDiff[] = [];
+        const stagingParams = stagingNode.parameters || {};
+        const mainParams = mainNode.parameters || {};
+        
+        // Flatten parameters for comparison? Or just top level?
+        // Let's do a recursive flatten comparison to catch nested changes like "contactId"
+        const flatten = (obj: any, prefix = ''): Record<string, any> => {
+            let result: Record<string, any> = {};
+            for (const key in obj) {
+                const val = obj[key];
+                const newKey = prefix ? `${prefix}.${key}` : key;
+                if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+                    Object.assign(result, flatten(val, newKey));
+                } else {
+                    result[newKey] = val;
+                }
+            }
+            return result;
+        };
+
+        const flatStaging = flatten(stagingParams);
+        const flatMain = flatten(mainParams);
+        const allParamKeys = new Set([...Object.keys(flatStaging), ...Object.keys(flatMain)]);
+
+        allParamKeys.forEach(key => {
+            const sVal = flatStaging[key];
+            const mVal = flatMain[key];
+            if (sVal !== mVal) { // Strict equality for primitives
+                 // Handle arrays specially? For now strict equality works if strings/numbers.
+                 // If array, JSON stringify?
+                 if (Array.isArray(sVal) || Array.isArray(mVal)) {
+                     if (JSON.stringify(sVal) !== JSON.stringify(mVal)) {
+                         paramDiffs.push({ key, stagingValue: sVal, mainValue: mVal });
+                     }
+                 } else {
+                     paramDiffs.push({ key, stagingValue: sVal, mainValue: mVal });
+                 }
+            }
+        });
+
+        if (paramDiffs.length > 0) {
+            diffs.push({
+                nodeName: name,
+                nodeType: stagingNode.type,
+                changeType: 'modified',
+                parameterChanges: paramDiffs
+            });
+        }
+    }
+  });
+
+  return diffs;
+}
 
 /**
  * Extract all unique credentials from a workflow
@@ -102,11 +247,35 @@ export function extractWorkflowCalls(workflow: N8NWorkflow, workflowName: string
   workflow.nodes?.forEach((node: N8NNode) => {
     // Look for Execute Workflow nodes
     if (node.type === 'n8n-nodes-base.executeWorkflow' || node.type.includes('executeWorkflow')) {
-      const targetWorkflow = node.parameters?.workflowId;
+      // The parameter might be a simple string (workflowId) OR an object depending on the node version/config
+      // We should check different possible locations for the target workflow ID/name
+      let targetWorkflow = node.parameters?.workflowId;
+
+      // Sometimes it might be in 'source' or 'workflow'
+      if (typeof targetWorkflow === 'object') {
+          // It's an object, try to find a name or id inside, or stringify it safely
+          // Common patterns: { mode: 'id', value: '...' } or { __rl: true, value: '...', mode: 'id' }
+          const val = (targetWorkflow as any)?.value;
+          if (val) {
+             targetWorkflow = val;
+          } else {
+             try {
+                targetWorkflow = JSON.stringify(targetWorkflow);
+             } catch(e) {
+                targetWorkflow = "Unknown Workflow Object";
+             }
+          }
+      }
+
+      // Ensure it's a string
+      if (targetWorkflow && typeof targetWorkflow !== 'string') {
+          targetWorkflow = String(targetWorkflow);
+      }
+
       if (targetWorkflow) {
         calls.push({
           sourceWorkflow: workflowName,
-          targetWorkflow,
+          targetWorkflow: targetWorkflow as string,
           nodeId: node.id,
           nodeName: node.name,
         });
@@ -139,6 +308,8 @@ export function compareCredentials(
     return {
       id,
       name: stagingCred?.name || mainCred?.name || id,
+      stagingName: stagingCred?.name,
+      mainName: mainCred?.name,
       type: stagingCred?.type || mainCred?.type || 'unknown',
       inStaging: !!stagingCred,
       inMain: !!mainCred,
@@ -249,4 +420,29 @@ export function normalizeWorkflowName(name: string): string {
  */
 export function isStagingWorkflow(name: string): boolean {
   return /^staging-/i.test(name);
+}
+
+/**
+ * Detect hardcoded secrets in workflow
+ */
+export function detectHardcodedSecrets(workflow: any): string[] {
+  const secrets: string[] = [];
+  const jsonStr = JSON.stringify(workflow);
+  
+  // Patterns to detect
+  const patterns = [
+    /Bearer\s+[A-Za-z0-9\-_.]{20,}/g,  // Bearer tokens
+    /ghp_[A-Za-z0-9]{36}/g,             // GitHub PATs
+    /sk_live_[A-Za-z0-9]{24,}/g,        // Stripe keys
+    /AIza[A-Za-z0-9\-_]{35}/g,          // Google API keys
+  ];
+
+  for (const pattern of patterns) {
+    const matches = jsonStr.match(pattern);
+    if (matches) {
+      secrets.push(...matches);
+    }
+  }
+
+  return secrets;
 }

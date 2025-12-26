@@ -37,8 +37,6 @@ function ProtectedRoute({
 }
 
 function Router() {
-  const { isAuthenticated, loading } = useAuth();
-
   return (
     <Switch>
       <Route path={"/login"} component={Login} />
@@ -56,18 +54,7 @@ function Router() {
       />
       <Route
         path={"/"}
-        component={() => {
-          if (loading) {
-            return (
-              <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 flex items-center justify-center">
-                <div className="animate-spin">
-                  <div className="h-12 w-12 border-4 border-accent border-t-transparent rounded-full" />
-                </div>
-              </div>
-            );
-          }
-          return isAuthenticated ? <Dashboard /> : <Login />;
-        }}
+        component={() => <ProtectedRoute component={Dashboard} />}
       />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}

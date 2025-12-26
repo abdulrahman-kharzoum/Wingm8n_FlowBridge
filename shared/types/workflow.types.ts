@@ -14,6 +14,8 @@ export interface Credential {
 export interface CredentialDiff {
   id: string;
   name: string;
+  stagingName?: string;
+  mainName?: string;
   type: string;
   inStaging: boolean;
   inMain: boolean;
@@ -68,6 +70,28 @@ export interface WorkflowCallDiff {
   };
 }
 
+// Metadata Diff Types
+export interface MetadataDiff {
+  key: string;
+  stagingValue?: any;
+  mainValue?: any;
+  isDifferent: boolean;
+}
+
+// Node Parameter Diff Types
+export interface ParameterDiff {
+  key: string;
+  stagingValue?: any;
+  mainValue?: any;
+}
+
+export interface NodeDiff {
+  nodeName: string;
+  nodeType: string;
+  changeType: 'added' | 'removed' | 'modified';
+  parameterChanges?: ParameterDiff[];
+}
+
 // N8N Workflow JSON structure
 export interface N8NNode {
   id: string;
@@ -102,6 +126,8 @@ export interface WorkflowComparison {
   credentials: CredentialDiff[];
   domains: DomainDiff[];
   workflowCalls: WorkflowCallDiff;
+  metadata: MetadataDiff[];
+  nodeChanges: NodeDiff[];
 }
 
 // Merge decision types

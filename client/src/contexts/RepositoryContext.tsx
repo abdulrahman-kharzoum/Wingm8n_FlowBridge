@@ -15,6 +15,14 @@ export interface Repository {
   pushed_at: string;
   stargazers_count: number;
   language: string | null;
+  repoType?: 'personal' | 'organization' | 'collaborative';
+  permissions?: {
+    admin: boolean;
+    maintain?: boolean;
+    push: boolean;
+    triage?: boolean;
+    pull: boolean;
+  };
 }
 
 export interface SelectedRepository {

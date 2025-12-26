@@ -1,479 +1,254 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Workflow,
-  Search,
-  CheckCircle,
-  AlertCircle,
   ArrowRight,
-  Plus,
-  Minus,
-  ChevronDown,
-  ChevronUp,
+  GitGraph,
+  RefreshCw,
 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
 import type { WorkflowCallDiff, WorkflowCall } from '@shared/types/workflow.types';
 
 interface WorkflowCallsComparisonProps {
-  workflowCalls: WorkflowCallDiff;
+  workflowCalls: (WorkflowCall & { filename?: string })[]; // Adapted to receive flat list but we might want to process it into chains if not already
   onCallSelected?: (call: WorkflowCall, action: 'add' | 'remove' | 'keep') => void;
 }
+
+// Helper to visualize a simple chain node
+const ChainNode = ({ name, type = 'default' }: { name: string; type?: 'default' | 'source' | 'target' | 'new' }) => {
+    let bgClass = "bg-slate-800 border-slate-700 text-slate-200";
+    if (type === 'source') bgClass = "bg-blue-500/10 border-blue-500/30 text-blue-300";
+    if (type === 'target') bgClass = "bg-purple-500/10 border-purple-500/30 text-purple-300";
+    if (type === 'new') bgClass = "bg-emerald-500/10 border-emerald-500/30 text-emerald-300";
+
+    return (
+        <div className={`px-3 py-1.5 rounded-md border text-xs font-mono font-medium shadow-sm flex items-center gap-2 ${bgClass}`}>
+            <Workflow className="w-3 h-3 opacity-50" />
+            {name}
+        </div>
+    );
+};
+
+// Helper to visualize a connection arrow
+const ChainArrow = () => (
+    <div className="text-slate-600 flex items-center justify-center px-1">
+        <ArrowRight className="w-4 h-4" />
+    </div>
+);
 
 export default function WorkflowCallsComparison({
   workflowCalls,
   onCallSelected,
 }: WorkflowCallsComparisonProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [expandedCall, setExpandedCall] = useState<string | null>(null);
-  const [selections, setSelections] = useState<Record<string, 'add' | 'remove' | 'keep'>>({});
+    // Process flat calls into a map of relationships for visualization
+    // We want to group by Source Workflow to show "Graph" snippets
+    const relationships = useMemo(() => {
+        const groups: Record<string, typeof workflowCalls> = {};
+        workflowCalls.forEach(call => {
+            // Filter out unchanged workflow calls (present in both branches)
+            // We assume that if it's in both, it's the same call.
+            // Check 'inMain' and 'inStaging' properties which are added by the analyzer
+            if ((call as any).inMain && (call as any).inStaging) {
+                return;
+            }
 
-  const filteredAdded = workflowCalls.differences.added.filter(
-    (call) =>
-      call.sourceWorkflow.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      call.targetWorkflow.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+            if (!groups[call.sourceWorkflow]) {
+                groups[call.sourceWorkflow] = [];
+            }
+            groups[call.sourceWorkflow].push(call);
+        });
+        return groups;
+    }, [workflowCalls]);
 
-  const filteredRemoved = workflowCalls.differences.removed.filter(
-    (call) =>
-      call.sourceWorkflow.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      call.targetWorkflow.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+    // State for the "Result" graph builder (simplified)
+    // We allow users to "toggle" active calls for the final merge
+    const [activeCalls, setActiveCalls] = useState<Set<string>>(new Set());
 
-  const filteredModified = workflowCalls.differences.modified.filter(
-    (mod) =>
-      mod.staging.sourceWorkflow.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      mod.staging.targetWorkflow.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+    // Initialize with existing calls if needed, or let user build from scratch
+    // For now, let's pre-select "Head" (Staging) calls as the default proposal
+    useState(() => {
+        const initial = new Set<string>();
+        workflowCalls.forEach(call => {
+            // Assuming we have some way to know if it's staging or main from the flat list mapped in parent
+            // But here we receive just the list.
+            // Let's assume the parent maps 'inStaging' property (mapped from inHead).
+            if ((call as any).inStaging) {
+                initial.add(`${call.sourceWorkflow}->${call.targetWorkflow}`);
+            }
+        });
+        setActiveCalls(initial);
+    });
 
-  const handleSelection = (call: WorkflowCall, action: 'add' | 'remove' | 'keep') => {
-    const key = `${call.sourceWorkflow}-${call.targetWorkflow}`;
-    setSelections((prev) => ({
-      ...prev,
-      [key]: action,
-    }));
-    onCallSelected?.(call, action);
-  };
+    const toggleCall = (call: WorkflowCall) => {
+        const key = `${call.sourceWorkflow}->${call.targetWorkflow}`;
+        const newSet = new Set(activeCalls);
+        if (newSet.has(key)) {
+            newSet.delete(key);
+            onCallSelected?.(call, 'remove');
+        } else {
+            newSet.add(key);
+            onCallSelected?.(call, 'add');
+        }
+        setActiveCalls(newSet);
+    };
 
   return (
-    <div className="space-y-4">
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="bg-slate-800/50 border-slate-700">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-emerald-500">
-                {workflowCalls.stagingChains.length}
-              </div>
-              <p className="text-xs text-slate-400 mt-1">Staging Workflows</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-800/50 border-slate-700">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-500">
-                {workflowCalls.mainChains.length}
-              </div>
-              <p className="text-xs text-slate-400 mt-1">Main Workflows</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-800/50 border-slate-700">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-amber-500">
-                {workflowCalls.differences.added.length +
-                  workflowCalls.differences.removed.length +
-                  workflowCalls.differences.modified.length}
-              </div>
-              <p className="text-xs text-slate-400 mt-1">Changes</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search and Filter */}
+    <div className="space-y-6">
       <Card className="bg-slate-800/50 border-slate-700">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Workflow className="w-5 h-5 text-accent" />
-            Workflow Call Chains
-          </CardTitle>
-          <CardDescription>
-            Review and select workflow-to-workflow call changes
-          </CardDescription>
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <GitGraph className="w-5 h-5 text-accent" />
+                Workflow Call Graph
+              </CardTitle>
+              <CardDescription>
+                Visualize and manage workflow execution chains
+              </CardDescription>
+            </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <Input
-              placeholder="Search workflow names..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 bg-slate-700/50 border-slate-600 text-white placeholder-slate-500"
-            />
-          </div>
-
-          {/* Tabs */}
-          <Tabs defaultValue="changes" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 bg-slate-700/30 border border-slate-600/30">
-              <TabsTrigger value="changes" className="text-xs">
-                Changes (
-                {workflowCalls.differences.added.length +
-                  workflowCalls.differences.removed.length +
-                  workflowCalls.differences.modified.length}
-                )
-              </TabsTrigger>
-              <TabsTrigger value="added" className="text-xs">
-                Added ({filteredAdded.length})
-              </TabsTrigger>
-              <TabsTrigger value="removed" className="text-xs">
-                Removed ({filteredRemoved.length})
-              </TabsTrigger>
-            </TabsList>
-
-            {/* All Changes */}
-            <TabsContent value="changes" className="space-y-2 mt-4">
-              {filteredAdded.length === 0 &&
-              filteredRemoved.length === 0 &&
-              filteredModified.length === 0 ? (
-                <div className="text-center py-8 text-slate-400">
-                  <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>No workflow call changes</p>
+        <CardContent>
+            {Object.keys(relationships).length === 0 ? (
+                 <div className="text-center py-12 text-slate-400">
+                    <Workflow className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p className="text-lg">No workflow calls detected</p>
                 </div>
-              ) : (
-                <>
-                  {filteredAdded.map((call) => (
-                    <WorkflowCallCard
-                      key={`${call.sourceWorkflow}-${call.targetWorkflow}`}
-                      call={call}
-                      type="added"
-                      isExpanded={expandedCall === `${call.sourceWorkflow}-${call.targetWorkflow}`}
-                      onToggle={() =>
-                        setExpandedCall(
-                          expandedCall === `${call.sourceWorkflow}-${call.targetWorkflow}`
-                            ? null
-                            : `${call.sourceWorkflow}-${call.targetWorkflow}`
-                        )
-                      }
-                      onSelection={handleSelection}
-                      selectedAction={
-                        selections[`${call.sourceWorkflow}-${call.targetWorkflow}`]
-                      }
-                    />
-                  ))}
+            ) : (
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                     {/* Column 1: Main Graph (Base) */}
+                     <div className="space-y-4">
+                        <div className="flex items-center gap-2 pb-2 border-b border-slate-700">
+                            <Badge variant="outline" className="border-blue-500/30 text-blue-400 bg-blue-500/10">Main Branch</Badge>
+                            <span className="text-xs text-slate-500">Current Flow</span>
+                        </div>
+                        <div className="space-y-4">
+                            {Object.entries(relationships).map(([source, calls]) => {
+                                const mainCalls = calls.filter((c: any) => c.inMain);
+                                if (mainCalls.length === 0) return null;
+                                return (
+                                    <div key={`main-${source}`} className="p-4 rounded-lg bg-slate-900/30 border border-slate-700/50">
+                                        <div className="flex items-center flex-wrap gap-2">
+                                            <ChainNode name={source} type="source" />
+                                            {mainCalls.map((call, idx) => (
+                                                <div key={idx} className="flex items-center gap-2">
+                                                    <ChainArrow />
+                                                    <ChainNode name={call.targetWorkflow} type="target" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                     </div>
 
-                  {filteredRemoved.map((call) => (
-                    <WorkflowCallCard
-                      key={`${call.sourceWorkflow}-${call.targetWorkflow}`}
-                      call={call}
-                      type="removed"
-                      isExpanded={expandedCall === `${call.sourceWorkflow}-${call.targetWorkflow}`}
-                      onToggle={() =>
-                        setExpandedCall(
-                          expandedCall === `${call.sourceWorkflow}-${call.targetWorkflow}`
-                            ? null
-                            : `${call.sourceWorkflow}-${call.targetWorkflow}`
-                        )
-                      }
-                      onSelection={handleSelection}
-                      selectedAction={
-                        selections[`${call.sourceWorkflow}-${call.targetWorkflow}`]
-                      }
-                    />
-                  ))}
+                     {/* Column 2: Staging Graph (Head) */}
+                     <div className="space-y-4">
+                        <div className="flex items-center gap-2 pb-2 border-b border-slate-700">
+                             <Badge variant="outline" className="border-amber-500/30 text-amber-400 bg-amber-500/10">Staging Branch</Badge>
+                             <span className="text-xs text-slate-500">Proposed Flow</span>
+                        </div>
+                        <div className="space-y-4">
+                            {Object.entries(relationships).map(([source, calls]) => {
+                                const stagingCalls = calls.filter((c: any) => c.inStaging);
+                                if (stagingCalls.length === 0) return null;
+                                return (
+                                    <div key={`staging-${source}`} className="p-4 rounded-lg bg-slate-900/30 border border-slate-700/50 relative">
+                                        {/* Diff Indicator */}
+                                        {!calls.some((c: any) => c.inMain) && (
+                                            <Badge className="absolute -top-2 -right-2 bg-emerald-500 text-white text-[10px]">New Chain</Badge>
+                                        )}
+                                        <div className="flex items-center flex-wrap gap-2">
+                                            <ChainNode name={source} type="source" />
+                                            {stagingCalls.map((call, idx) => (
+                                                <div key={idx} className="flex items-center gap-2">
+                                                    <ChainArrow />
+                                                    <ChainNode name={call.targetWorkflow} type={calls.find((c: any) => c.targetWorkflow === call.targetWorkflow && c.inMain) ? 'target' : 'new'} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                     </div>
 
-                  {filteredModified.map((mod) => (
-                    <WorkflowCallCard
-                      key={`${mod.staging.sourceWorkflow}-${mod.staging.targetWorkflow}`}
-                      call={mod.staging}
-                      type="modified"
-                      isExpanded={
-                        expandedCall ===
-                        `${mod.staging.sourceWorkflow}-${mod.staging.targetWorkflow}`
-                      }
-                      onToggle={() =>
-                        setExpandedCall(
-                          expandedCall ===
-                            `${mod.staging.sourceWorkflow}-${mod.staging.targetWorkflow}`
-                            ? null
-                            : `${mod.staging.sourceWorkflow}-${mod.staging.targetWorkflow}`
-                        )
-                      }
-                      onSelection={handleSelection}
-                      selectedAction={
-                        selections[
-                          `${mod.staging.sourceWorkflow}-${mod.staging.targetWorkflow}`
-                        ]
-                      }
-                      modifiedVersion={mod.main}
-                    />
-                  ))}
-                </>
-              )}
-            </TabsContent>
+                     {/* Column 3: Result Builder */}
+                     <div className="space-y-4">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-700">
+                             <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10">Result</Badge>
+                                <span className="text-xs text-slate-500">Final Graph</span>
+                             </div>
+                             <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400">
+                                 <RefreshCw className="w-3 h-3" />
+                             </Button>
+                        </div>
+                        
+                        <div className="space-y-4 bg-slate-900/50 p-4 rounded-xl border border-slate-800 min-h-[300px]">
+                            <p className="text-xs text-slate-500 mb-4 text-center">
+                                Select active connections from Main or Staging to build the final workflow graph.
+                            </p>
+                            
+                             {Object.entries(relationships).map(([source, calls]) => (
+                                <div key={`result-${source}`} className="p-3 rounded-lg border border-slate-700 bg-slate-800/80">
+                                    <div className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                                        <Workflow className="w-4 h-4 text-accent" />
+                                        {source} triggers:
+                                    </div>
+                                    <div className="space-y-2 pl-4 border-l-2 border-slate-700 ml-2">
+                                        {/* Unique targets from both lists */}
+                                        {Array.from(new Set(calls.map(c => c.targetWorkflow))).map(target => {
+                                            const callObj = calls.find(c => c.targetWorkflow === target);
+                                            if (!callObj) return null;
+                                            
+                                            const key = `${source}->${target}`;
+                                            const isActive = activeCalls.has(key);
+                                            const inMain = calls.some((c: any) => c.targetWorkflow === target && c.inMain);
+                                            const inStaging = calls.some((c: any) => c.targetWorkflow === target && c.inStaging);
 
-            {/* Added */}
-            <TabsContent value="added" className="space-y-2 mt-4">
-              {filteredAdded.length === 0 ? (
-                <div className="text-center py-8 text-slate-400">
-                  <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>No added workflow calls</p>
+                                            return (
+                                                <div
+                                                    key={target}
+                                                    className={`
+                                                        group flex items-center justify-between p-2 rounded transition-all
+                                                        ${isActive
+                                                            ? 'bg-accent/10 border border-accent/30'
+                                                            : 'bg-slate-800 border border-slate-700'}
+                                                    `}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <Checkbox
+                                                            id={`call-${source}-${target}`}
+                                                            checked={isActive}
+                                                            onCheckedChange={() => toggleCall(callObj)}
+                                                        />
+                                                        <label
+                                                            htmlFor={`call-${source}-${target}`}
+                                                            className={`text-sm cursor-pointer select-none ${isActive ? 'text-white' : 'text-slate-400'}`}
+                                                        >
+                                                            {target}
+                                                        </label>
+                                                    </div>
+                                                    
+                                                    <div className="flex gap-1">
+                                                        {inMain && <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-400">Main</Badge>}
+                                                        {inStaging && <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">Staging</Badge>}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                             ))}
+                        </div>
+                     </div>
                 </div>
-              ) : (
-                filteredAdded.map((call) => (
-                  <WorkflowCallCard
-                    key={`${call.sourceWorkflow}-${call.targetWorkflow}`}
-                    call={call}
-                    type="added"
-                    isExpanded={expandedCall === `${call.sourceWorkflow}-${call.targetWorkflow}`}
-                    onToggle={() =>
-                      setExpandedCall(
-                        expandedCall === `${call.sourceWorkflow}-${call.targetWorkflow}`
-                          ? null
-                          : `${call.sourceWorkflow}-${call.targetWorkflow}`
-                      )
-                    }
-                    onSelection={handleSelection}
-                    selectedAction={
-                      selections[`${call.sourceWorkflow}-${call.targetWorkflow}`]
-                    }
-                  />
-                ))
-              )}
-            </TabsContent>
-
-            {/* Removed */}
-            <TabsContent value="removed" className="space-y-2 mt-4">
-              {filteredRemoved.length === 0 ? (
-                <div className="text-center py-8 text-slate-400">
-                  <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>No removed workflow calls</p>
-                </div>
-              ) : (
-                filteredRemoved.map((call) => (
-                  <WorkflowCallCard
-                    key={`${call.sourceWorkflow}-${call.targetWorkflow}`}
-                    call={call}
-                    type="removed"
-                    isExpanded={expandedCall === `${call.sourceWorkflow}-${call.targetWorkflow}`}
-                    onToggle={() =>
-                      setExpandedCall(
-                        expandedCall === `${call.sourceWorkflow}-${call.targetWorkflow}`
-                          ? null
-                          : `${call.sourceWorkflow}-${call.targetWorkflow}`
-                      )
-                    }
-                    onSelection={handleSelection}
-                    selectedAction={
-                      selections[`${call.sourceWorkflow}-${call.targetWorkflow}`]
-                    }
-                  />
-                ))
-              )}
-            </TabsContent>
-          </Tabs>
+            )}
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-interface WorkflowCallCardProps {
-  call: WorkflowCall;
-  type: 'added' | 'removed' | 'modified';
-  isExpanded: boolean;
-  onToggle: () => void;
-  onSelection: (call: WorkflowCall, action: 'add' | 'remove' | 'keep') => void;
-  selectedAction?: 'add' | 'remove' | 'keep';
-  modifiedVersion?: WorkflowCall;
-}
-
-function WorkflowCallCard({
-  call,
-  type,
-  isExpanded,
-  onToggle,
-  onSelection,
-  selectedAction,
-  modifiedVersion,
-}: WorkflowCallCardProps) {
-  const getTypeColor = (t: string) => {
-    switch (t) {
-      case 'added':
-        return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50';
-      case 'removed':
-        return 'bg-red-500/20 text-red-400 border-red-500/50';
-      case 'modified':
-        return 'bg-amber-500/20 text-amber-400 border-amber-500/50';
-      default:
-        return 'bg-slate-500/20 text-slate-400 border-slate-500/50';
-    }
-  };
-
-  const getTypeIcon = (t: string) => {
-    switch (t) {
-      case 'added':
-        return <Plus className="w-4 h-4" />;
-      case 'removed':
-        return <Minus className="w-4 h-4" />;
-      default:
-        return <AlertCircle className="w-4 h-4" />;
-    }
-  };
-
-  return (
-    <div className="border border-slate-700 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 transition-colors overflow-hidden">
-      <button
-        onClick={onToggle}
-        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-700/30 transition-colors"
-      >
-        <div className="flex items-center gap-3 flex-1 text-left">
-          <Badge className={getTypeColor(type)}>
-            {getTypeIcon(type)}
-            <span className="ml-1 capitalize">{type}</span>
-          </Badge>
-          <div className="flex items-center gap-2 flex-1">
-            <span className="font-semibold text-white">{call.sourceWorkflow}</span>
-            <ArrowRight className="w-4 h-4 text-slate-500" />
-            <span className="font-semibold text-white">{call.targetWorkflow}</span>
-          </div>
-        </div>
-        {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-slate-500" />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-slate-500" />
-        )}
-      </button>
-
-      {isExpanded && (
-        <div className="border-t border-slate-700 px-4 py-3 bg-slate-900/50 space-y-3">
-          {/* Call Details */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-semibold text-slate-300 uppercase">Details</h4>
-            <div className="grid grid-cols-2 gap-3 text-xs text-slate-400">
-              <div>
-                <span className="font-semibold">Node ID:</span>
-                <div className="font-mono text-slate-300 mt-1">{call.nodeId}</div>
-              </div>
-              <div>
-                <span className="font-semibold">Node Name:</span>
-                <div className="text-slate-300 mt-1">{call.nodeName}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Modified Version */}
-          {modifiedVersion && (
-            <div className="space-y-2 pt-2 border-t border-slate-700">
-              <h4 className="text-xs font-semibold text-slate-300 uppercase">Modified Version</h4>
-              <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-white">{modifiedVersion.sourceWorkflow}</span>
-                  <ArrowRight className="w-4 h-4 text-slate-500" />
-                  <span className="font-semibold text-white">{modifiedVersion.targetWorkflow}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Selection */}
-          <div className="space-y-2 pt-2 border-t border-slate-700">
-            <h4 className="text-xs font-semibold text-slate-300 uppercase">Action</h4>
-            <div className="grid grid-cols-2 gap-2">
-              {type === 'added' ? (
-                <>
-                  <Button
-                    size="sm"
-                    variant={selectedAction === 'add' ? 'default' : 'outline'}
-                    onClick={() => onSelection(call, 'add')}
-                    className="text-xs"
-                  >
-                    {selectedAction === 'add' ? (
-                      <>
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Keep
-                      </>
-                    ) : (
-                      'Keep'
-                    )}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={selectedAction === 'remove' ? 'default' : 'outline'}
-                    onClick={() => onSelection(call, 'remove')}
-                    className="text-xs"
-                  >
-                    {selectedAction === 'remove' ? (
-                      <>
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Remove
-                      </>
-                    ) : (
-                      'Remove'
-                    )}
-                  </Button>
-                </>
-              ) : type === 'removed' ? (
-                <>
-                  <Button
-                    size="sm"
-                    variant={selectedAction === 'add' ? 'default' : 'outline'}
-                    onClick={() => onSelection(call, 'add')}
-                    className="text-xs"
-                  >
-                    {selectedAction === 'add' ? (
-                      <>
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Restore
-                      </>
-                    ) : (
-                      'Restore'
-                    )}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={selectedAction === 'remove' ? 'default' : 'outline'}
-                    onClick={() => onSelection(call, 'remove')}
-                    className="text-xs"
-                  >
-                    {selectedAction === 'remove' ? (
-                      <>
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Keep Removed
-                      </>
-                    ) : (
-                      'Keep Removed'
-                    )}
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  size="sm"
-                  variant={selectedAction === 'keep' ? 'default' : 'outline'}
-                  onClick={() => onSelection(call, 'keep')}
-                  className="col-span-2 text-xs"
-                >
-                  {selectedAction === 'keep' ? (
-                    <>
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Keep Modified
-                    </>
-                  ) : (
-                    'Keep Modified'
-                  )}
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

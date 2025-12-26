@@ -3,21 +3,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Key,
   Search,
-  CheckCircle,
   AlertCircle,
   Copy,
-  ChevronDown,
-  ChevronUp,
+  FileCode,
 } from 'lucide-react';
 import type { CredentialDiff } from '@shared/types/workflow.types';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface CredentialsComparisonProps {
-  credentials: CredentialDiff[];
-  onCredentialSelected?: (credentialId: string, source: 'staging' | 'main' | 'keep-both') => void;
+  credentials: (CredentialDiff & { filename?: string })[];
+  onCredentialSelected?: (credentialId: string, source: 'staging' | 'main' | 'keep-both' | null) => void;
 }
 
 export default function CredentialsComparison({
@@ -25,26 +24,38 @@ export default function CredentialsComparison({
   onCredentialSelected,
 }: CredentialsComparisonProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selections, setSelections] = useState<Record<string, 'staging' | 'main' | 'keep-both'>>({});
 
-  const filteredCredentials = credentials.filter(
-    (cred) =>
+  const filteredCredentials = credentials.filter((cred) => {
+    // Filter out unchanged credentials (same name in both branches)
+    if (cred.inMain && cred.inStaging && cred.mainName === cred.stagingName) {
+      return false;
+    }
+
+    return (
       cred.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       cred.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       cred.type.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const stagingOnlyCount = credentials.filter((c) => c.stagingOnly).length;
-  const mainOnlyCount = credentials.filter((c) => c.mainOnly).length;
-  const sharedCount = credentials.filter((c) => c.inStaging && c.inMain).length;
+    );
+  });
 
   const handleSelection = (credentialId: string, source: 'staging' | 'main' | 'keep-both') => {
-    setSelections((prev) => ({
-      ...prev,
-      [credentialId]: source,
-    }));
-    onCredentialSelected?.(credentialId, source);
+    setSelections((prev) => {
+      // If unchecking the currently selected one
+      if (prev[credentialId] === source) {
+        const newState = { ...prev };
+        delete newState[credentialId];
+        onCredentialSelected?.(credentialId, null);
+        return newState;
+      }
+
+      const newState = {
+        ...prev,
+        [credentialId]: source,
+      };
+      onCredentialSelected?.(credentialId, source);
+      return newState;
+    });
   };
 
   const copyToClipboard = (text: string) => {
@@ -52,281 +63,195 @@ export default function CredentialsComparison({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="bg-slate-800/50 border-slate-700">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-accent">{sharedCount}</div>
-              <p className="text-xs text-slate-400 mt-1">Shared Credentials</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-800/50 border-slate-700">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-amber-500">{stagingOnlyCount}</div>
-              <p className="text-xs text-slate-400 mt-1">Staging Only</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-800/50 border-slate-700">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-500">{mainOnlyCount}</div>
-              <p className="text-xs text-slate-400 mt-1">Main Only</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search and Filter */}
+    <div className="space-y-6">
       <Card className="bg-slate-800/50 border-slate-700">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Key className="w-5 h-5 text-accent" />
-            Credentials Analysis
-          </CardTitle>
-          <CardDescription>
-            Review and select which credentials to include in the merge
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <Input
-              placeholder="Search credentials by ID, name, or type..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 bg-slate-700/50 border-slate-600 text-white placeholder-slate-500"
-            />
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Key className="w-5 h-5 text-accent" />
+                Credentials Analysis
+              </CardTitle>
+              <CardDescription>
+                Compare credentials between branches and select the version to keep
+              </CardDescription>
+            </div>
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <Input
+                placeholder="Search credentials..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 bg-slate-900/50 border-slate-600 text-white placeholder-slate-500"
+              />
+            </div>
           </div>
+        </CardHeader>
+        <CardContent>
+          {filteredCredentials.length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p className="text-lg">No changed credentials found</p>
+              {credentials.length > 0 && <p className="text-sm text-slate-500 mt-2">({credentials.length} total credentials detected)</p>}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-slate-700 overflow-hidden">
+              <Table>
+                <TableHeader className="bg-slate-900/80">
+                  <TableRow className="border-slate-700 hover:bg-slate-900/80">
+                    <TableHead className="w-[35%] text-slate-300 font-semibold">
+                      Main Branch (Base)
+                    </TableHead>
+                    <TableHead className="w-[35%] text-slate-300 font-semibold">
+                      Staging Branch (Head)
+                    </TableHead>
+                    <TableHead className="w-[30%] text-slate-300 font-semibold">
+                      Result Selection
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredCredentials.map((cred) => (
+                    <TableRow key={cred.id} className="border-slate-700 hover:bg-slate-800/30">
+                      {/* Main Column */}
+                      <TableCell className="align-top py-4">
+                        {cred.inMain ? (
+                          <div className="space-y-3">
+                            <div className="flex items-start gap-3">
+                                <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20">
+                                    <Key className="w-4 h-4 text-blue-400" />
+                                </div>
+                                <div>
+                                   <div className="font-medium text-white">{cred.mainName || cred.name}</div>
+                                   <div className="text-xs font-mono text-slate-400 mt-0.5">{cred.id}</div>
+                                    <Badge variant="outline" className="mt-2 text-[10px] border-slate-600 text-slate-400">
+                                        {cred.type}
+                                    </Badge>
+                                </div>
+                            </div>
+                            {cred.filename && (
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500 pl-11">
+                                    <FileCode className="w-3 h-3 flex-shrink-0" />
+                                    <span className="break-all">{cred.filename}</span>
+                                </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="h-full flex items-center justify-center text-slate-600 italic text-sm">
+                            Not present in Main
+                          </div>
+                        )}
+                      </TableCell>
 
-          {/* Tabs */}
-          <Tabs defaultValue="all" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 bg-slate-700/30 border border-slate-600/30">
-              <TabsTrigger value="all" className="text-xs">
-                All ({filteredCredentials.length})
-              </TabsTrigger>
-              <TabsTrigger value="shared" className="text-xs">
-                Shared ({filteredCredentials.filter((c) => c.inStaging && c.inMain).length})
-              </TabsTrigger>
-              <TabsTrigger value="staging" className="text-xs">
-                Staging ({filteredCredentials.filter((c) => c.stagingOnly).length})
-              </TabsTrigger>
-              <TabsTrigger value="main" className="text-xs">
-                Main ({filteredCredentials.filter((c) => c.mainOnly).length})
-              </TabsTrigger>
-            </TabsList>
+                      {/* Staging Column */}
+                      <TableCell className="align-top py-4 border-l border-slate-700/50">
+                        {cred.inStaging ? (
+                          <div className="space-y-3">
+                             <div className="flex items-start gap-3">
+                                <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20">
+                                    <Key className="w-4 h-4 text-amber-400" />
+                                </div>
+                                <div>
+                                    <div className="font-medium text-white">{cred.stagingName || cred.name}</div>
+                                    <div className="text-xs font-mono text-slate-400 mt-0.5">{cred.id}</div>
+                                     <div className="flex gap-2 mt-2">
+                                        <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-400">
+                                            {cred.type}
+                                        </Badge>
+                                        {!cred.inMain && (
+                                            <Badge className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/50 text-[10px]">
+                                                New
+                                            </Badge>
+                                        )}
+                                     </div>
+                                </div>
+                            </div>
+                             {cred.filename && (
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500 pl-11">
+                                    <FileCode className="w-3 h-3 flex-shrink-0" />
+                                    <span className="break-all">{cred.filename}</span>
+                                </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="h-full flex items-center justify-center text-slate-600 italic text-sm">
+                            Not present in Staging
+                          </div>
+                        )}
+                      </TableCell>
 
-            {/* All Credentials */}
-            <TabsContent value="all" className="space-y-2 mt-4">
-              {filteredCredentials.length === 0 ? (
-                <div className="text-center py-8 text-slate-400">
-                  <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>No credentials found</p>
-                </div>
-              ) : (
-                filteredCredentials.map((cred) => (
-                  <CredentialCard
-                    key={cred.id}
-                    credential={cred}
-                    isExpanded={expandedId === cred.id}
-                    onToggle={() => setExpandedId(expandedId === cred.id ? null : cred.id)}
-                    onSelection={handleSelection}
-                    selectedSource={selections[cred.id]}
-                    onCopy={copyToClipboard}
-                  />
-                ))
-              )}
-            </TabsContent>
+                      {/* Results Column */}
+                      <TableCell className="align-top py-4 border-l border-slate-700/50 bg-slate-900/30">
+                        <div className="space-y-3">
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                     <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Source Selection</div>
+                                     {cred.inMain && (
+                                        <div className={`flex items-center space-x-2 p-2 rounded border ${selections[cred.id] === 'main' ? 'bg-blue-500/10 border-blue-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
+                                            <Checkbox
+                                                id={`main-${cred.id}`}
+                                                checked={selections[cred.id] === 'main'}
+                                                onCheckedChange={() => handleSelection(cred.id, 'main')}
+                                                className="data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+                                            />
+                                            <label
+                                                htmlFor={`main-${cred.id}`}
+                                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer text-slate-200"
+                                            >
+                                                Main Branch
+                                            </label>
+                                        </div>
+                                     )}
+                                     
+                                     {cred.inStaging && (
+                                        <div className={`flex items-center space-x-2 p-2 rounded border ${selections[cred.id] === 'staging' ? 'bg-amber-500/10 border-amber-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
+                                            <Checkbox
+                                                id={`staging-${cred.id}`}
+                                                checked={selections[cred.id] === 'staging'}
+                                                onCheckedChange={() => handleSelection(cred.id, 'staging')}
+                                                className="data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+                                            />
+                                            <label
+                                                htmlFor={`staging-${cred.id}`}
+                                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer text-slate-200"
+                                            >
+                                                Staging Branch
+                                                {(!cred.inMain) && <Badge className="ml-2 text-[10px] bg-emerald-500/20 text-emerald-400 border-none">New</Badge>}
+                                            </label>
+                                        </div>
+                                     )}
+                                </div>
 
-            {/* Shared Credentials */}
-            <TabsContent value="shared" className="space-y-2 mt-4">
-              {filteredCredentials
-                .filter((c) => c.inStaging && c.inMain)
-                .map((cred) => (
-                  <CredentialCard
-                    key={cred.id}
-                    credential={cred}
-                    isExpanded={expandedId === cred.id}
-                    onToggle={() => setExpandedId(expandedId === cred.id ? null : cred.id)}
-                    onSelection={handleSelection}
-                    selectedSource={selections[cred.id]}
-                    onCopy={copyToClipboard}
-                  />
-                ))}
-            </TabsContent>
-
-            {/* Staging Only */}
-            <TabsContent value="staging" className="space-y-2 mt-4">
-              {filteredCredentials
-                .filter((c) => c.stagingOnly)
-                .map((cred) => (
-                  <CredentialCard
-                    key={cred.id}
-                    credential={cred}
-                    isExpanded={expandedId === cred.id}
-                    onToggle={() => setExpandedId(expandedId === cred.id ? null : cred.id)}
-                    onSelection={handleSelection}
-                    selectedSource={selections[cred.id]}
-                    onCopy={copyToClipboard}
-                  />
-                ))}
-            </TabsContent>
-
-            {/* Main Only */}
-            <TabsContent value="main" className="space-y-2 mt-4">
-              {filteredCredentials
-                .filter((c) => c.mainOnly)
-                .map((cred) => (
-                  <CredentialCard
-                    key={cred.id}
-                    credential={cred}
-                    isExpanded={expandedId === cred.id}
-                    onToggle={() => setExpandedId(expandedId === cred.id ? null : cred.id)}
-                    onSelection={handleSelection}
-                    selectedSource={selections[cred.id]}
-                    onCopy={copyToClipboard}
-                  />
-                ))}
-            </TabsContent>
-          </Tabs>
+                                {/* Result ID Display */}
+                                {selections[cred.id] && (
+                                    <div className="pt-2 border-t border-slate-700/50 animate-in fade-in zoom-in-95 duration-200">
+                                        <div className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-1">Final Result ID</div>
+                                        <div className="flex items-center gap-2 bg-slate-950/50 p-2 rounded border border-slate-800">
+                                            <code className="text-xs font-mono text-white flex-1 truncate">
+                                                {cred.id}
+                                            </code>
+                                            <Button
+                                                size="icon"
+                                                variant="ghost"
+                                                className="h-6 w-6 text-slate-500 hover:text-white"
+                                                onClick={() => copyToClipboard(cred.id)}
+                                            >
+                                                <Copy className="w-3 h-3" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-interface CredentialCardProps {
-  credential: CredentialDiff;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onSelection: (credentialId: string, source: 'staging' | 'main' | 'keep-both') => void;
-  selectedSource?: 'staging' | 'main' | 'keep-both';
-  onCopy: (text: string) => void;
-}
-
-function CredentialCard({
-  credential,
-  isExpanded,
-  onToggle,
-  onSelection,
-  selectedSource,
-  onCopy,
-}: CredentialCardProps) {
-  return (
-    <div className="border border-slate-700 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 transition-colors">
-      <button
-        onClick={onToggle}
-        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-700/30 transition-colors"
-      >
-        <div className="flex items-center gap-3 flex-1 text-left">
-          <div className="flex-shrink-0">
-            {credential.stagingOnly ? (
-              <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/50">Staging</Badge>
-            ) : credential.mainOnly ? (
-              <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/50">Main</Badge>
-            ) : (
-              <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/50">
-                Both
-              </Badge>
-            )}
-          </div>
-          <div className="flex-1">
-            <div className="font-semibold text-white text-sm">{credential.name}</div>
-            <div className="text-xs text-slate-400 font-mono">{credential.id}</div>
-          </div>
-          <Badge variant="outline" className="text-xs text-slate-400 border-slate-600">
-            {credential.type}
-          </Badge>
-        </div>
-        {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-slate-500" />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-slate-500" />
-        )}
-      </button>
-
-      {isExpanded && (
-        <div className="border-t border-slate-700 px-4 py-3 bg-slate-900/50 space-y-3">
-          <div className="grid grid-cols-2 gap-4">
-            {credential.inStaging && (
-              <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700">
-                <div className="text-xs font-semibold text-amber-400 mb-2">In Staging</div>
-                <Button
-                  size="sm"
-                  variant={selectedSource === 'staging' ? 'default' : 'outline'}
-                  onClick={() => onSelection(credential.id, 'staging')}
-                  className="w-full text-xs"
-                >
-                  {selectedSource === 'staging' ? (
-                    <>
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Selected
-                    </>
-                  ) : (
-                    'Select'
-                  )}
-                </Button>
-              </div>
-            )}
-
-            {credential.inMain && (
-              <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700">
-                <div className="text-xs font-semibold text-blue-400 mb-2">In Main</div>
-                <Button
-                  size="sm"
-                  variant={selectedSource === 'main' ? 'default' : 'outline'}
-                  onClick={() => onSelection(credential.id, 'main')}
-                  className="w-full text-xs"
-                >
-                  {selectedSource === 'main' ? (
-                    <>
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Selected
-                    </>
-                  ) : (
-                    'Select'
-                  )}
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {credential.inStaging && credential.inMain && (
-            <Button
-              size="sm"
-              variant={selectedSource === 'keep-both' ? 'default' : 'outline'}
-              onClick={() => onSelection(credential.id, 'keep-both')}
-              className="w-full text-xs"
-            >
-              {selectedSource === 'keep-both' ? (
-                <>
-                  <CheckCircle className="w-3 h-3 mr-1" />
-                  Keep Both
-                </>
-              ) : (
-                'Keep Both'
-              )}
-            </Button>
-          )}
-
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onCopy(credential.id)}
-            className="w-full text-xs text-slate-400 hover:text-slate-300"
-          >
-            <Copy className="w-3 h-3 mr-1" />
-            Copy ID
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

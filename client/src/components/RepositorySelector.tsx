@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Github, GitBranch, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
-import { skipToken } from '@trpc/react-query';
+import { skipToken } from '@tanstack/react-query';
 
 interface RepositorySelectorProps {
   onRepositorySelected: (owner: string, repo: string, stagingBranch: string, mainBranch: string) => void;

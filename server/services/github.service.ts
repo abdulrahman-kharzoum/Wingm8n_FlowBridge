@@ -16,6 +16,13 @@ export interface Repository {
   pushed_at: string;
   stargazers_count: number;
   language: string | null;
+  permissions?: {
+    admin: boolean;
+    maintain?: boolean;
+    push: boolean;
+    triage?: boolean;
+    pull: boolean;
+  };
 }
 
 export interface Branch {
@@ -60,15 +67,16 @@ export class GitHubService {
   async getUserRepositories(
     page: number = 1,
     perPage: number = 30,
-    affiliation: 'owner' | 'collaborator' | 'organization_member' = 'owner'
+    affiliation: string = 'owner,collaborator,organization_member'
   ): Promise<{ repos: Repository[]; total: number }> {
     try {
       const response = await (this.octokit.rest.repos as any).listForAuthenticatedUser({
         page,
         per_page: perPage,
         affiliation,
-        sort: 'pushed',
+        sort: 'updated',
         direction: 'desc',
+        visibility: 'all',
       });
 
       return {

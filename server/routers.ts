@@ -5,13 +5,15 @@ import { publicProcedure, router } from "./_core/trpc";
 import { githubRouter } from "./routers/github";
 import { workflowRouter } from "./routers/workflow";
 import { mergeRouter } from "./routers/merge";
+import { prComparisonRouter } from "./routers/pr-comparison";
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
+  // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   github: githubRouter,
   workflow: workflowRouter,
   merge: mergeRouter,
+  prComparison: prComparisonRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
