@@ -76,8 +76,8 @@ In a typical dev-ops flow, you build workflows in a `staging` branch (prefixed w
 | **Frontend**         | [Next.js 14](https://nextjs.org/), [TypeScript](https://www.typescriptlang.org/), [Tailwind CSS](https://tailwindcss.com/) |
 | **UI Components**    | [shadcn/ui](https://ui.shadcn.com/), [Framer Motion](https://www.framer.com/motion/)                                       |
 | **State Management** | [TanStack Query](https://tanstack.com/query/latest), [Zustand](https://docs.pmnd.rs/zustand/getting-started/introduction)  |
-| **Backend/API**      | [tRPC](https://trpc.io/), Node.js                                                                                          |
-| **Database**         | [PostgreSQL](https://www.postgresql.org/) with [Drizzle ORM](https://orm.drizzle.team/)                                    |
+| **Backend/API**      | [tRPC](https://trpc.io/), Node.js (Express)                                                                                |
+| **Database**         | [SQLite](https://www.sqlite.org/) with [Drizzle ORM](https://orm.drizzle.team/)                                            |
 | **Integrations**     | [GitHub REST & GraphQL API](https://docs.github.com/en/rest)                                                               |
 
 ---
@@ -107,7 +107,8 @@ NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=your_random_secret_string
 
 # Database Configuration
-DATABASE_URL=postgresql://user:password@localhost:5432/flowbridge
+# DATABASE_URL is used for drizzle-kit. For runtime, SQLite uses 'sqlite.db' file.
+DATABASE_URL=file:sqlite.db
 ```
 
 ### Installation
