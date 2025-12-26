@@ -243,7 +243,8 @@ export class PRAnalyzerService {
                 inMain: true,
                 inStaging: false, // Will be set to true when we process the replacement
                 filename: result.filename,
-                mainName: cred.name
+                mainName: cred.name,
+                mainNodeAuthType: cred.nodeAuthType,
              });
           } else {
              if (!credentials.has(cred.id)) {
@@ -253,7 +254,8 @@ export class PRAnalyzerService {
                   inMain: true,
                   inStaging: false,
                   filename: result.filename,
-                  mainName: cred.name
+                  mainName: cred.name,
+                  mainNodeAuthType: cred.nodeAuthType,
                 });
              }
           }
@@ -282,6 +284,7 @@ export class PRAnalyzerService {
                   existing.name = cred.name;
                   existing.stagingType = cred.type;
                   existing.mainType = existing.type; // Current type is main type
+                  existing.stagingNodeAuthType = cred.nodeAuthType;
               }
           });
 
@@ -305,6 +308,7 @@ export class PRAnalyzerService {
               existing.name = cred.name;
               existing.stagingType = cred.type;
               existing.mainType = existing.type;
+              existing.stagingNodeAuthType = cred.nodeAuthType;
             }
           } else {
             // It does NOT exist in Main
@@ -317,7 +321,8 @@ export class PRAnalyzerService {
                 inStaging: true,
                 filename: result.filename,
                 stagingName: cred.name,
-                stagingType: cred.type
+                stagingType: cred.type,
+                stagingNodeAuthType: cred.nodeAuthType,
               });
             }
           }

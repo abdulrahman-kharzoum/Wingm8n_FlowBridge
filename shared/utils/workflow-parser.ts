@@ -238,6 +238,9 @@ export function extractCredentials(workflow: N8NWorkflow): Credential[] {
 
   workflow.nodes?.forEach((node: N8NNode) => {
     if (node.credentials) {
+      // Find authentication parameter value if it exists
+      const nodeAuthType = node.parameters?.authentication;
+
       Object.entries(node.credentials).forEach(([key, cred]: [string, any]) => {
         if (cred.id && !credentials.has(cred.id)) {
           credentials.set(cred.id, {
@@ -245,6 +248,7 @@ export function extractCredentials(workflow: N8NWorkflow): Credential[] {
             name: cred.name || key,
             type: key,
             nodeType: node.type,
+            nodeAuthType: typeof nodeAuthType === 'string' ? nodeAuthType : undefined,
           });
         }
       });
@@ -422,6 +426,8 @@ export function compareCredentials(
       inMain: !!mainCred,
       stagingOnly: !!stagingCred && !mainCred,
       mainOnly: !stagingCred && !!mainCred,
+      stagingNodeAuthType: stagingCred?.nodeAuthType,
+      mainNodeAuthType: mainCred?.nodeAuthType,
     };
   });
 }

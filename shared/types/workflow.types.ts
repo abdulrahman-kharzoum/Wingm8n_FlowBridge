@@ -9,6 +9,7 @@ export interface Credential {
   name: string;
   type: string;
   nodeType?: string;
+  nodeAuthType?: string;
 }
 
 export interface CredentialDiff {
@@ -25,6 +26,8 @@ export interface CredentialDiff {
   inMain: boolean;
   stagingOnly: boolean;
   mainOnly: boolean;
+  stagingNodeAuthType?: string;
+  mainNodeAuthType?: string;
 }
 
 // Domain/URL types

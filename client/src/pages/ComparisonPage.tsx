@@ -111,6 +111,17 @@ export default function ComparisonPage() {
     stagingBranch: string,
     mainBranch: string
   ) => {
+    // Reset state when selecting a new repository
+    setPrNumber('');
+    setMergeDecisions({
+      credentials: {},
+      domains: {},
+      workflowCalls: {},
+      metadata: {},
+    });
+    setMergeResult(null);
+    prComparisonQuery.reset();
+    
     setSelectedRepo({ owner, repo, stagingBranch, mainBranch });
   };
 
@@ -289,7 +300,18 @@ export default function ComparisonPage() {
                 </div>
               </div>
                 <Button
-                  onClick={() => setSelectedRepo(null)}
+                  onClick={() => {
+                    setSelectedRepo(null);
+                    setPrNumber('');
+                    setMergeDecisions({
+                      credentials: {},
+                      domains: {},
+                      workflowCalls: {},
+                      metadata: {},
+                    });
+                    setMergeResult(null);
+                    prComparisonQuery.reset();
+                  }}
                   variant="ghost"
                   className="text-slate-400 hover:text-white"
                 >

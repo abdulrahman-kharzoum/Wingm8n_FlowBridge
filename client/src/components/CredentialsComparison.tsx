@@ -125,10 +125,17 @@ export default function CredentialsComparison({
                                 <div>
                                    <div className="font-medium text-white">{cred.mainName || cred.name}</div>
                                    <div className="text-xs font-mono text-slate-400 mt-0.5">{cred.mainId || cred.id}</div>
-                                    <Badge variant="outline" className="mt-2 text-[10px] border-slate-600 text-slate-400">
-                                        {/* Show type from Main if possible, otherwise generic type */}
-                                        {cred.mainType || cred.type}
-                                    </Badge>
+                                    <div className="flex gap-2 mt-2">
+                                        <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-400">
+                                            {/* Show type from Main if possible, otherwise generic type */}
+                                            {cred.mainType || cred.type}
+                                        </Badge>
+                                        {cred.mainNodeAuthType && (
+                                            <Badge variant="secondary" className="text-[10px] bg-blue-500/10 text-blue-400 border-none">
+                                                {cred.mainNodeAuthType}
+                                            </Badge>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                             {cred.filename && (
@@ -160,9 +167,19 @@ export default function CredentialsComparison({
                                         <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-400">
                                             {cred.stagingType || cred.type}
                                         </Badge>
+                                        {cred.stagingNodeAuthType && (
+                                            <Badge variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-400 border-none">
+                                                {cred.stagingNodeAuthType}
+                                            </Badge>
+                                        )}
                                         {!cred.inMain && (
                                             <Badge className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/50 text-[10px]">
                                                 New
+                                            </Badge>
+                                        )}
+                                        {cred.inMain && cred.stagingNodeAuthType !== cred.mainNodeAuthType && (
+                                            <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/50 text-[10px]">
+                                                Auth Changed
                                             </Badge>
                                         )}
                                      </div>
