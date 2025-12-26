@@ -499,6 +499,7 @@ export default function ComparisonPage() {
                     <CredentialsComparison
                       credentials={analysis.credentials}
                       onCredentialSelected={handleCredentialSelected}
+                      mergeDecisions={mergeDecisions.credentials}
                     />
                   </TabsContent>
 
@@ -507,6 +508,7 @@ export default function ComparisonPage() {
                     <DomainsComparison
                       domains={analysis.domains}
                       onDomainSelected={handleDomainSelected}
+                      mergeDecisions={mergeDecisions.domains}
                     />
                   </TabsContent>
 
@@ -515,9 +517,10 @@ export default function ComparisonPage() {
                     <WorkflowCallsComparison
                       workflowCalls={analysis.workflowCalls}
                       onCallSelected={handleWorkflowCallSelected}
+                      mergeDecisions={mergeDecisions.workflowCalls}
                     />
                   </TabsContent>
-                  
+                   
                   {/* Node Changes Tab */}
                   <TabsContent value="nodes" className="mt-6">
                     <NodeChangesComparison nodeChanges={analysis.nodeChanges || []} />
@@ -528,6 +531,7 @@ export default function ComparisonPage() {
                     <MetadataComparison
                         metadata={analysis.metadata || []}
                         onMetadataSelected={handleMetadataSelected}
+                        mergeDecisions={mergeDecisions.metadata}
                     />
                   </TabsContent>
                 </Tabs>

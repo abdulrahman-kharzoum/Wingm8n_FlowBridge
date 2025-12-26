@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import type { WorkflowCallDiff, WorkflowCall } from '@shared/types/workflow.type
 interface WorkflowCallsComparisonProps {
   workflowCalls: (WorkflowCall & { filename?: string })[]; // Adapted to receive flat list but we might want to process it into chains if not already
   onCallSelected?: (call: WorkflowCall, action: 'add' | 'remove' | 'keep') => void;
+  mergeDecisions?: Record<string, 'add' | 'remove' | 'keep'>;
 }
 
 // Helper to visualize a simple chain node
@@ -45,6 +46,7 @@ const ChainArrow = () => (
 export default function WorkflowCallsComparison({
   workflowCalls,
   onCallSelected,
+  mergeDecisions = {},
 }: WorkflowCallsComparisonProps) {
     // Process flat calls into a map of relationships for visualization
     // We want to group by Source Workflow to show "Graph" snippets
@@ -70,20 +72,16 @@ export default function WorkflowCallsComparison({
     // We allow users to "toggle" active calls for the final merge
     const [activeCalls, setActiveCalls] = useState<Set<string>>(new Set());
 
-    // Initialize with existing calls if needed, or let user build from scratch
-    // For now, let's pre-select "Head" (Staging) calls as the default proposal
-    useState(() => {
+    // Initialize selections from parent mergeDecisions
+    useEffect(() => {
         const initial = new Set<string>();
-        workflowCalls.forEach(call => {
-            // Assuming we have some way to know if it's staging or main from the flat list mapped in parent
-            // But here we receive just the list.
-            // Let's assume the parent maps 'inStaging' property (mapped from inHead).
-            if ((call as any).inStaging) {
-                initial.add(`${call.sourceWorkflow}->${call.targetWorkflow}`);
+        Object.keys(mergeDecisions).forEach(key => {
+            if (mergeDecisions[key] === 'add') {
+                initial.add(key);
             }
         });
         setActiveCalls(initial);
-    });
+    }, [mergeDecisions]);
 
     const toggleCall = (call: WorkflowCall) => {
         const key = `${call.sourceWorkflow}->${call.targetWorkflow}`;
@@ -145,10 +143,10 @@ export default function WorkflowCallsComparison({
                                 );
                             })}
                         </div>
-                     </div>
+                      </div>
 
-                     {/* Column 2: Staging Graph (Head) */}
-                     <div className="space-y-4">
+                      {/* Column 2: Staging Graph (Head) */}
+                      <div className="space-y-4">
                         <div className="flex items-center gap-2 pb-2 border-b border-slate-700">
                              <Badge variant="outline" className="border-amber-500/30 text-amber-400 bg-amber-500/10">Staging Branch</Badge>
                              <span className="text-xs text-slate-500">Proposed Flow</span>
@@ -180,10 +178,10 @@ export default function WorkflowCallsComparison({
                                 );
                             })}
                         </div>
-                     </div>
+                      </div>
 
-                     {/* Column 3: Result Builder */}
-                     <div className="space-y-4">
+                      {/* Column 3: Result Builder */}
+                      <div className="space-y-4">
                         <div className="flex items-center justify-between pb-2 border-b border-slate-700">
                              <div className="flex items-center gap-2">
                                 <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10">Result</Badge>
@@ -193,12 +191,12 @@ export default function WorkflowCallsComparison({
                                  <RefreshCw className="w-3 h-3" />
                              </Button>
                         </div>
-                        
+                         
                         <div className="space-y-4 bg-slate-900/50 p-4 rounded-xl border border-slate-800 min-h-[300px]">
                             <p className="text-xs text-slate-500 mb-4 text-center">
                                 Select active connections from Main or Staging to build the final workflow graph.
                             </p>
-                            
+                             
                              {Object.entries(relationships).map(([source, calls]) => (
                                 <div key={`result-${source}`} className="p-3 rounded-lg border border-slate-700 bg-slate-800/80">
                                     <div className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
@@ -210,7 +208,7 @@ export default function WorkflowCallsComparison({
                                         {Array.from(new Set(calls.map(c => c.targetWorkflow))).map(target => {
                                             const callObj = calls.find(c => c.targetWorkflow === target);
                                             if (!callObj) return null;
-                                            
+                                             
                                             const key = `${source}->${target}`;
                                             const isActive = activeCalls.has(key);
                                             const inMain = calls.some((c: any) => c.targetWorkflow === target && c.inMain);
@@ -242,7 +240,7 @@ export default function WorkflowCallsComparison({
                                                             <span className="text-[10px] text-slate-500 font-mono">{target}</span>
                                                         </div>
                                                     </div>
-                                                    
+                                                     
                                                     <div className="flex gap-1">
                                                         {inMain && <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-400">Main</Badge>}
                                                         {inStaging && <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">Staging</Badge>}
@@ -254,7 +252,7 @@ export default function WorkflowCallsComparison({
                                 </div>
                              ))}
                         </div>
-                     </div>
+                      </div>
                 </div>
             )}
         </CardContent>

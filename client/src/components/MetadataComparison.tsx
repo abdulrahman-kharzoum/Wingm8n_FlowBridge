@@ -3,16 +3,22 @@ import { Badge } from '@/components/ui/badge';
 import { Info, FileCode } from 'lucide-react';
 import type { MetadataDiff } from '@shared/types/workflow.types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 
 interface MetadataComparisonProps {
   metadata: { filename: string; diffs: MetadataDiff[] }[];
   onMetadataSelected?: (filename: string, key: string, source: 'staging' | 'main' | null) => void;
+  mergeDecisions?: Record<string, 'staging' | 'main'>;
 }
 
-export default function MetadataComparison({ metadata, onMetadataSelected }: MetadataComparisonProps) {
+export default function MetadataComparison({ metadata, onMetadataSelected, mergeDecisions = {} }: MetadataComparisonProps) {
   const [selections, setSelections] = useState<Record<string, 'staging' | 'main'>>({});
+
+  // Initialize selections from parent mergeDecisions
+  useEffect(() => {
+    setSelections(mergeDecisions);
+  }, [mergeDecisions]);
 
   const handleSelection = (filename: string, key: string, source: 'staging' | 'main') => {
     const uniqueKey = `${filename}-${key}`;
@@ -73,11 +79,11 @@ export default function MetadataComparison({ metadata, onMetadataSelected }: Met
                                 {fileMeta.diffs.map((diff, i) => {
                                     const uniqueKey = `${fileMeta.filename}-${diff.key}`;
                                     const selection = selections[uniqueKey];
-                                    
+                                     
                                     return (
                                     <TableRow key={i} className="border-slate-700 hover:bg-slate-800/30">
                                         <TableCell className="font-medium text-slate-200">{diff.key}</TableCell>
-                                        
+                                         
                                         {/* Main Value */}
                                         <TableCell>
                                             <div 

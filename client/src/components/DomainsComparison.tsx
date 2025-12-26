@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,11 +18,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 interface DomainsComparisonProps {
   domains: (DomainDiff & { filename?: string })[];
   onDomainSelected?: (url: string, selectedUrl: string | null) => void;
+  mergeDecisions?: Record<string, { selected: 'staging' | 'main'; url: string }>;
 }
 
-export default function DomainsComparison({ domains, onDomainSelected }: DomainsComparisonProps) {
+export default function DomainsComparison({ domains, onDomainSelected, mergeDecisions = {} }: DomainsComparisonProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selections, setSelections] = useState<Record<string, string>>({});
+
+  // Initialize selections from parent mergeDecisions
+  useEffect(() => {
+    const initial: Record<string, string> = {};
+    Object.entries(mergeDecisions).forEach(([url, decision]) => {
+      if (decision && decision.url) {
+        initial[url] = decision.url;
+      }
+    });
+    setSelections(initial);
+  }, [mergeDecisions]);
 
   // Filter out non-http/https URLs and apply search
   const filteredDomains = domains.filter((domain) => {
@@ -213,7 +225,7 @@ export default function DomainsComparison({ domains, onDomainSelected }: Domains
                                             </label>
                                         </div>
                                     )}
-                                    
+                                     
                                     {domain.stagingUrl && (
                                         <div className={`flex items-center space-x-2 p-2 rounded border ${selections[domain.url] === domain.stagingUrl ? 'bg-amber-500/10 border-amber-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
                                             <Checkbox

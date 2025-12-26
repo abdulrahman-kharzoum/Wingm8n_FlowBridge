@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,14 +17,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 interface CredentialsComparisonProps {
   credentials: (CredentialDiff & { filename?: string })[];
   onCredentialSelected?: (credentialId: string, source: 'staging' | 'main' | 'keep-both' | null) => void;
+  mergeDecisions?: Record<string, 'staging' | 'main' | 'keep-both'>;
 }
 
 export default function CredentialsComparison({
   credentials,
   onCredentialSelected,
+  mergeDecisions = {},
 }: CredentialsComparisonProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selections, setSelections] = useState<Record<string, 'staging' | 'main' | 'keep-both'>>({});
+
+  // Initialize selections from parent mergeDecisions
+  useEffect(() => {
+    setSelections(mergeDecisions);
+  }, [mergeDecisions]);
 
   const filteredCredentials = credentials.filter((cred) => {
     return (
