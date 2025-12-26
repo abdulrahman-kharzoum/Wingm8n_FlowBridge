@@ -86,7 +86,9 @@ export function compareNodes(
   const stagingNodeMap = new Map(stagingNodes.map(n => [n.name, n]));
   const mainNodeMap = new Map(mainNodes.map(n => [n.name, n]));
 
-  const allNames = new Set([...stagingNodeMap.keys(), ...mainNodeMap.keys()]);
+  const allNames = new Set<string>();
+  stagingNodeMap.forEach((_, key) => allNames.add(key));
+  mainNodeMap.forEach((_, key) => allNames.add(key));
 
   allNames.forEach(name => {
     const stagingNode = stagingNodeMap.get(name);
@@ -105,13 +107,29 @@ export function compareNodes(
             changeType: 'removed'
         });
     } else if (stagingNode && mainNode) {
-        // Modified - check parameters
+        // Modified - check parameters and specific root properties
         const paramDiffs: ParameterDiff[] = [];
         const stagingParams = stagingNode.parameters || {};
         const mainParams = mainNode.parameters || {};
         
-        // Flatten parameters for comparison? Or just top level?
-        // Let's do a recursive flatten comparison to catch nested changes like "contactId"
+        // Check root properties that are important
+        const rootPropsToCheck = ['webhookId', 'credentials'];
+        rootPropsToCheck.forEach(prop => {
+            // @ts-ignore
+            const sVal = stagingNode[prop];
+            // @ts-ignore
+            const mVal = mainNode[prop];
+            
+            if (JSON.stringify(sVal) !== JSON.stringify(mVal)) {
+                 paramDiffs.push({
+                     key: prop,
+                     stagingValue: sVal,
+                     mainValue: mVal
+                 });
+            }
+        });
+
+        // Flatten parameters for comparison
         const flatten = (obj: any, prefix = ''): Record<string, any> => {
             let result: Record<string, any> = {};
             for (const key in obj) {
@@ -133,9 +151,7 @@ export function compareNodes(
         allParamKeys.forEach(key => {
             const sVal = flatStaging[key];
             const mVal = flatMain[key];
-            if (sVal !== mVal) { // Strict equality for primitives
-                 // Handle arrays specially? For now strict equality works if strings/numbers.
-                 // If array, JSON stringify?
+            if (sVal !== mVal) {
                  if (Array.isArray(sVal) || Array.isArray(mVal)) {
                      if (JSON.stringify(sVal) !== JSON.stringify(mVal)) {
                          paramDiffs.push({ key, stagingValue: sVal, mainValue: mVal });
@@ -158,6 +174,36 @@ export function compareNodes(
   });
 
   return diffs;
+}
+
+/**
+ * Identify credential replacements by checking if a node switched credentials
+ */
+export function getCredentialReplacements(
+  stagingWorkflow: N8NWorkflow,
+  mainWorkflow: N8NWorkflow
+): Map<string, string> {
+  const replacements = new Map<string, string>(); // mainId -> stagingId
+
+  const stagingNodes = new Map((stagingWorkflow.nodes || []).map(n => [n.name, n]));
+  const mainNodes = new Map((mainWorkflow.nodes || []).map(n => [n.name, n]));
+
+  stagingNodes.forEach((stagingNode, name) => {
+    const mainNode = mainNodes.get(name);
+    if (mainNode && stagingNode.credentials && mainNode.credentials) {
+       // Check if credentials changed for the same node
+       Object.keys(stagingNode.credentials).forEach(credType => {
+           const sCred = stagingNode.credentials?.[credType];
+           const mCred = mainNode.credentials?.[credType];
+           
+           if (sCred && mCred && sCred.id !== mCred.id) {
+               replacements.set(mCred.id, sCred.id);
+           }
+       });
+    }
+  });
+
+  return replacements;
 }
 
 /**
@@ -199,6 +245,25 @@ export function extractDomains(workflow: N8NWorkflow, workflowName: string): Dom
   ];
 
   workflow.nodes?.forEach((node: N8NNode) => {
+    // Special handling for Webhook nodes
+    if (node.type === 'n8n-nodes-base.webhook' && node.parameters) {
+        // Extract webhook details as a "domain" entry so it appears in the list
+        const httpMethod = node.parameters.httpMethod || 'GET';
+        const path = node.parameters.path;
+        // @ts-ignore
+        const webhookId = node.webhookId;
+        
+        if (path) {
+            domains.push({
+                url: `${httpMethod} ${path} (Webhook)`,
+                nodeId: node.id,
+                nodeName: node.name,
+                nodeType: node.type,
+                parameterPath: 'path',
+            });
+        }
+    }
+
     if (node.parameters) {
       const extractUrlsFromObject = (obj: any, path: string = ''): void => {
         Object.entries(obj).forEach(([key, value]: [string, any]) => {

@@ -13,6 +13,8 @@ export interface Credential {
 
 export interface CredentialDiff {
   id: string;
+  stagingId?: string;
+  mainId?: string;
   name: string;
   stagingName?: string;
   mainName?: string;

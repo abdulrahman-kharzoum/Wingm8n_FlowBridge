@@ -1,5 +1,5 @@
 import { Octokit } from '@octokit/rest';
-import { extractCredentials, extractDomains, extractWorkflowCalls, detectHardcodedSecrets, extractMetadata, compareMetadata, compareNodes } from '@shared/utils/workflow-parser';
+import { extractCredentials, extractDomains, extractWorkflowCalls, detectHardcodedSecrets, extractMetadata, compareMetadata, compareNodes, getCredentialReplacements } from '@shared/utils/workflow-parser';
 import { createGitHubService } from './github.service';
 
 export interface WorkflowFileAnalysis {
@@ -190,7 +190,9 @@ export class PRAnalyzerService {
                 });
             }
 
-            const nDiffs = compareNodes(result.base.content, result.head.content);
+            // compareNodes(staging, main) -> compareNodes(head, base)
+            // This ensures Old=Main (Base), New=Staging (Head) in the diff output
+            const nDiffs = compareNodes(result.head.content, result.base.content);
             if (nDiffs.length > 0) {
                 nodeDiffs.push({
                     filename: result.filename,
@@ -203,45 +205,95 @@ export class PRAnalyzerService {
         secrets.push(...result.secrets);
       }
 
+      // Detect credential replacements
+      // getCredentialReplacements(staging, main) -> (head, base)
+      const replacements = new Map<string, string>(); // mainId -> stagingId
+      if (result.base?.content && result.head?.content) {
+          const fileReplacements = getCredentialReplacements(result.head.content, result.base.content);
+          fileReplacements.forEach((stagingId, mainId) => replacements.set(mainId, stagingId));
+      }
+
       // Aggregate credentials
+      // First pass: Process Main credentials (from Base)
       if (result.base?.credentials) {
         result.base.credentials.forEach((cred: any) => {
-          const key = `${cred.type}-${cred.id}`;
-          if (!credentials.has(key)) {
-            // Map inBase -> inMain, inHead -> inStaging to match types
-            credentials.set(key, {
-              ...cred,
-              inMain: true,
-              inStaging: false,
-              filename: result.filename,
-              mainName: cred.name
-            });
+          // Check if this credential was replaced by another one in Staging
+          const replacedByStagingId = replacements.get(cred.id);
+          
+          if (replacedByStagingId) {
+             // This credential was replaced. We will handle it when processing Staging credentials
+             // OR we can create a special key linking them.
+             // Let's use the MAIN credential ID as the primary key if it exists
+             credentials.set(cred.id, {
+                ...cred,
+                id: cred.id, // Use Main ID as the base ID for the diff entry
+                mainId: cred.id,
+                stagingId: replacedByStagingId,
+                inMain: true,
+                inStaging: false, // Will be set to true when we process the replacement
+                filename: result.filename,
+                mainName: cred.name
+             });
+          } else {
+             if (!credentials.has(cred.id)) {
+                credentials.set(cred.id, {
+                  ...cred,
+                  inMain: true,
+                  inStaging: false,
+                  filename: result.filename,
+                  mainName: cred.name
+                });
+             }
           }
         });
       }
       
+      // Second pass: Process Staging credentials (from Head)
       if (result.head?.credentials) {
         result.head.credentials.forEach((cred: any) => {
-          const key = `${cred.type}-${cred.id}`;
-          if (credentials.has(key)) {
-            const existing = credentials.get(key);
-            existing.inStaging = true;
-            existing.stagingName = cred.name;
-            // Update name to use staging name if present, as it's the "new" version
-            existing.name = cred.name;
+          // Check if this credential replaces a Main credential
+          let mainIdOfReplaced: string | null = null;
+          replacements.forEach((sId, mId) => {
+              if (sId === cred.id) {
+                  mainIdOfReplaced = mId;
+              }
+          });
+
+          if (mainIdOfReplaced) {
+              // It replaces an existing one. Update the entry created in the first pass.
+              const existing = credentials.get(mainIdOfReplaced);
+              if (existing) {
+                  existing.inStaging = true;
+                  existing.stagingName = cred.name;
+                  existing.stagingId = cred.id; // Explicitly set staging ID
+                  existing.name = cred.name; // Use new name for display? Or keep base name?
+                  // Usually we want to show the NEW name as the primary name if it changed
+                  existing.name = cred.name;
+              }
           } else {
-            credentials.set(key, {
-              ...cred,
-              inMain: false,
-              inStaging: true,
-              filename: result.filename,
-              stagingName: cred.name
-            });
+              // It's a regular new credential or same-ID match
+              const key = cred.id;
+              if (credentials.has(key)) {
+                const existing = credentials.get(key);
+                existing.inStaging = true;
+                existing.stagingName = cred.name;
+                // If it matches by ID, update name
+                existing.name = cred.name;
+              } else {
+                credentials.set(key, {
+                  ...cred,
+                  inMain: false,
+                  inStaging: true,
+                  filename: result.filename,
+                  stagingName: cred.name
+                });
+              }
           }
         });
       }
 
       // Aggregate domains
+      // Main (Base)
       if (result.base?.domains) {
         result.base.domains.forEach((domain: any) => {
           const key = `${domain.url}`;
@@ -257,6 +309,7 @@ export class PRAnalyzerService {
         });
       }
 
+      // Staging (Head)
       if (result.head?.domains) {
         result.head.domains.forEach((domain: any) => {
           const key = `${domain.url}`;
@@ -277,6 +330,7 @@ export class PRAnalyzerService {
       }
 
       // Aggregate workflow calls
+      // Main (Base)
       if (result.base?.workflowCalls && result.base.workflowCalls.calls) {
         result.base.workflowCalls.calls.forEach((call: any) => {
           const key = `${call.sourceWorkflow}-${call.targetWorkflow}`;
@@ -286,6 +340,7 @@ export class PRAnalyzerService {
         });
       }
 
+      // Staging (Head)
       if (result.head?.workflowCalls && result.head.workflowCalls.calls) {
         result.head.workflowCalls.calls.forEach((call: any) => {
           const key = `${call.sourceWorkflow}-${call.targetWorkflow}`;

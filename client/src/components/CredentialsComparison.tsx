@@ -117,7 +117,7 @@ export default function CredentialsComparison({
                                 </div>
                                 <div>
                                    <div className="font-medium text-white">{cred.mainName || cred.name}</div>
-                                   <div className="text-xs font-mono text-slate-400 mt-0.5">{cred.id}</div>
+                                   <div className="text-xs font-mono text-slate-400 mt-0.5">{cred.mainId || cred.id}</div>
                                     <Badge variant="outline" className="mt-2 text-[10px] border-slate-600 text-slate-400">
                                         {cred.type}
                                     </Badge>
@@ -147,7 +147,7 @@ export default function CredentialsComparison({
                                 </div>
                                 <div>
                                     <div className="font-medium text-white">{cred.stagingName || cred.name}</div>
-                                    <div className="text-xs font-mono text-slate-400 mt-0.5">{cred.id}</div>
+                                    <div className="text-xs font-mono text-slate-400 mt-0.5">{cred.stagingId || cred.id}</div>
                                      <div className="flex gap-2 mt-2">
                                         <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-400">
                                             {cred.type}
@@ -217,24 +217,24 @@ export default function CredentialsComparison({
                                 </div>
 
                                 {/* Result ID Display */}
-                                {selections[cred.id] && (
-                                    <div className="pt-2 border-t border-slate-700/50 animate-in fade-in zoom-in-95 duration-200">
-                                        <div className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-1">Final Result ID</div>
-                                        <div className="flex items-center gap-2 bg-slate-950/50 p-2 rounded border border-slate-800">
-                                            <code className="text-xs font-mono text-white flex-1 truncate">
-                                                {cred.id}
-                                            </code>
-                                            <Button
-                                                size="icon"
-                                                variant="ghost"
-                                                className="h-6 w-6 text-slate-500 hover:text-white"
-                                                onClick={() => copyToClipboard(cred.id)}
-                                            >
-                                                <Copy className="w-3 h-3" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                )}
+                               {selections[cred.id] && (
+                                   <div className="pt-2 border-t border-slate-700/50 animate-in fade-in zoom-in-95 duration-200">
+                                       <div className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-1">Final Result ID</div>
+                                       <div className="flex items-center gap-2 bg-slate-950/50 p-2 rounded border border-slate-800">
+                                           <code className="text-xs font-mono text-white flex-1 truncate">
+                                               {selections[cred.id] === 'staging' ? (cred.stagingId || cred.id) : (cred.mainId || cred.id)}
+                                           </code>
+                                           <Button
+                                               size="icon"
+                                               variant="ghost"
+                                               className="h-6 w-6 text-slate-500 hover:text-white"
+                                               onClick={() => copyToClipboard(selections[cred.id] === 'staging' ? (cred.stagingId || cred.id) : (cred.mainId || cred.id))}
+                                           >
+                                               <Copy className="w-3 h-3" />
+                                           </Button>
+                                       </div>
+                                   </div>
+                               )}
                             </div>
                         </div>
                       </TableCell>

@@ -26,11 +26,11 @@ export default function DomainsComparison({ domains, onDomainSelected }: Domains
 
   // Filter out non-http/https URLs and apply search
   const filteredDomains = domains.filter((domain) => {
-    // Only show http/https URLs
-    const isHttp = (url?: string) => url && (url.startsWith('http://') || url.startsWith('https://'));
+    // Allow non-empty URLs (including Webhooks)
+    const isValid = (url?: string) => url && url.length > 0;
     
-    // Check if at least one version is http/https
-    const relevant = isHttp(domain.url) || isHttp(domain.stagingUrl) || isHttp(domain.mainUrl);
+    // Check if at least one version is valid
+    const relevant = isValid(domain.url) || isValid(domain.stagingUrl) || isValid(domain.mainUrl);
     
     if (!relevant) return false;
 
