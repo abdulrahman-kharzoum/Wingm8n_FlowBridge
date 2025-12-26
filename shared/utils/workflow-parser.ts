@@ -191,15 +191,39 @@ export function getCredentialReplacements(
   stagingNodes.forEach((stagingNode, name) => {
     const mainNode = mainNodes.get(name);
     if (mainNode && stagingNode.credentials && mainNode.credentials) {
-       // Check if credentials changed for the same node
-       Object.keys(stagingNode.credentials).forEach(credType => {
-           const sCred = stagingNode.credentials?.[credType];
-           const mCred = mainNode.credentials?.[credType];
+       const stagingCreds = stagingNode.credentials;
+       const mainCreds = mainNode.credentials;
+       
+       const stagingKeys = Object.keys(stagingCreds);
+       const mainKeys = Object.keys(mainCreds);
+
+       // 1. Direct ID replacements (Same Type)
+       stagingKeys.forEach(credType => {
+           const sCred = stagingCreds[credType];
+           const mCred = mainCreds[credType];
            
            if (sCred && mCred && sCred.id !== mCred.id) {
                replacements.set(mCred.id, sCred.id);
            }
        });
+
+       // 2. Type replacements (Different Type)
+       // Find keys present in Staging but not in Main, and vice versa
+       const newTypes = stagingKeys.filter(k => !mainKeys.includes(k));
+       const oldTypes = mainKeys.filter(k => !stagingKeys.includes(k));
+
+       // If we have exactly one new type and one old type on the same node, assume it's a replacement
+       if (newTypes.length === 1 && oldTypes.length === 1) {
+           const sType = newTypes[0];
+           const mType = oldTypes[0];
+           
+           const sCred = stagingCreds[sType];
+           const mCred = mainCreds[mType];
+
+           if (sCred && mCred) {
+               replacements.set(mCred.id, sCred.id);
+           }
+       }
     }
   });
 

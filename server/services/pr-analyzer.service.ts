@@ -238,6 +238,7 @@ export class PRAnalyzerService {
              if (!credentials.has(cred.id)) {
                 credentials.set(cred.id, {
                   ...cred,
+                  mainType: cred.type,
                   inMain: true,
                   inStaging: false,
                   filename: result.filename,
@@ -252,42 +253,62 @@ export class PRAnalyzerService {
       if (result.head?.credentials) {
         result.head.credentials.forEach((cred: any) => {
           // Check if this credential replaces a Main credential
-          let mainIdOfReplaced: string | null = null;
+          // Check if this credential replaces ANY Main credentials
+          const replacedMainIds: string[] = [];
           replacements.forEach((sId, mId) => {
               if (sId === cred.id) {
-                  mainIdOfReplaced = mId;
+                  replacedMainIds.push(mId);
               }
           });
 
-          if (mainIdOfReplaced) {
-              // It replaces an existing one. Update the entry created in the first pass.
-              const existing = credentials.get(mainIdOfReplaced);
+          // Update all replaced entries
+          replacedMainIds.forEach(mId => {
+              const existing = credentials.get(mId);
               if (existing) {
                   existing.inStaging = true;
                   existing.stagingName = cred.name;
                   existing.stagingId = cred.id; // Explicitly set staging ID
-                  existing.name = cred.name; // Use new name for display? Or keep base name?
-                  // Usually we want to show the NEW name as the primary name if it changed
                   existing.name = cred.name;
+                  existing.stagingType = cred.type;
+                  existing.mainType = existing.type; // Current type is main type
               }
+          });
+
+          // Handle the credential itself (either as a continuation or a new entry)
+          const key = cred.id;
+          const isReplacement = replacedMainIds.length > 0;
+
+          if (credentials.has(key)) {
+            // It exists in Main with the SAME ID (Continuation)
+            if (isReplacement) {
+              // If this credential is used to replace OTHER credentials, we prioritize that relationship.
+              // We remove the self-match entry to avoid "ghosting" or duplicates where the credential
+              // appears both as a replacement target and as a standalone row.
+              // The user prefers to see only the replacement row.
+              credentials.delete(key);
+            } else {
+              // Normal continuation
+              const existing = credentials.get(key);
+              existing.inStaging = true;
+              existing.stagingName = cred.name;
+              existing.name = cred.name;
+              existing.stagingType = cred.type;
+              existing.mainType = existing.type;
+            }
           } else {
-              // It's a regular new credential or same-ID match
-              const key = cred.id;
-              if (credentials.has(key)) {
-                const existing = credentials.get(key);
-                existing.inStaging = true;
-                existing.stagingName = cred.name;
-                // If it matches by ID, update name
-                existing.name = cred.name;
-              } else {
-                credentials.set(key, {
-                  ...cred,
-                  inMain: false,
-                  inStaging: true,
-                  filename: result.filename,
-                  stagingName: cred.name
-                });
-              }
+            // It does NOT exist in Main
+            // Only add it as a "New" credential if it wasn't used as a replacement
+            // (If it IS a replacement, it's already accounted for in the 'replacedMainIds' block above)
+            if (!isReplacement) {
+              credentials.set(key, {
+                ...cred,
+                inMain: false,
+                inStaging: true,
+                filename: result.filename,
+                stagingName: cred.name,
+                stagingType: cred.type
+              });
+            }
           }
         });
       }

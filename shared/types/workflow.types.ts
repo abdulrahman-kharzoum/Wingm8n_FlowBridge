@@ -19,6 +19,8 @@ export interface CredentialDiff {
   stagingName?: string;
   mainName?: string;
   type: string;
+  stagingType?: string;
+  mainType?: string;
   inStaging: boolean;
   inMain: boolean;
   stagingOnly: boolean;
