@@ -175,6 +175,17 @@ export class PRAnalyzerService {
     const credentials = new Map();
     const domains = new Map();
     const workflowCalls = new Map();
+
+    // Helper to normalize webhook keys for comparison
+    const getDomainKey = (domain: any) => {
+        const match = domain.url.match(/^([A-Z]+)\s+(.+)\s+\(Webhook\)$/);
+        if (match) {
+            // Use path as key for webhooks to group method changes (e.g. GET -> POST)
+            return `webhook:${match[2]}`;
+        }
+        return domain.url;
+    };
+
     const secrets: string[] = [];
     const metadataDiffs: any[] = [];
     const nodeDiffs: any[] = [];
@@ -317,7 +328,7 @@ export class PRAnalyzerService {
       // Main (Base)
       if (result.base?.domains) {
         result.base.domains.forEach((domain: any) => {
-          const key = `${domain.url}`;
+          const key = getDomainKey(domain);
           if (!domains.has(key)) {
             domains.set(key, {
                 ...domain,
@@ -333,7 +344,7 @@ export class PRAnalyzerService {
       // Staging (Head)
       if (result.head?.domains) {
         result.head.domains.forEach((domain: any) => {
-          const key = `${domain.url}`;
+          const key = getDomainKey(domain);
           if (domains.has(key)) {
             const existing = domains.get(key);
             existing.inStaging = true;

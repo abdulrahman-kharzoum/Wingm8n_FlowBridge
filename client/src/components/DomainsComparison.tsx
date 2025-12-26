@@ -129,7 +129,7 @@ export default function DomainsComparison({ domains, onDomainSelected }: Domains
                                     </div>
                                     <div className="flex gap-2 mt-2">
                                          <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-400">
-                                            GET
+                                            {domain.mainUrl?.match(/^(GET|POST|PUT|DELETE|PATCH)\s/) ? domain.mainUrl.split(' ')[0] : 'GET'}
                                         </Badge>
                                     </div>
                                 </div>
@@ -162,7 +162,7 @@ export default function DomainsComparison({ domains, onDomainSelected }: Domains
                                     </div>
                                      <div className="flex gap-2 mt-2">
                                          <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-400">
-                                            GET
+                                            {domain.stagingUrl?.match(/^(GET|POST|PUT|DELETE|PATCH)\s/) ? domain.stagingUrl.split(' ')[0] : 'GET'}
                                         </Badge>
                                         {!domain.mainUrl && (
                                             <Badge className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/50 text-[10px]">

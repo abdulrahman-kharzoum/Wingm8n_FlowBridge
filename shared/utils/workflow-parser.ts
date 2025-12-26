@@ -270,6 +270,8 @@ export function extractDomains(workflow: N8NWorkflow, workflowName: string): Dom
 
   workflow.nodes?.forEach((node: N8NNode) => {
     // Special handling for Webhook nodes
+    let paramsToScan = node.parameters;
+    
     if (node.type === 'n8n-nodes-base.webhook' && node.parameters) {
         // Extract webhook details as a "domain" entry so it appears in the list
         const httpMethod = node.parameters.httpMethod || 'GET';
@@ -286,9 +288,16 @@ export function extractDomains(workflow: N8NWorkflow, workflowName: string): Dom
                 parameterPath: 'path',
             });
         }
+        
+        // Don't scan the 'path' parameter again in the generic scanner
+        // to avoid duplicate entries (one formatted as webhook, one raw)
+        if (paramsToScan) {
+            const { path, ...rest } = paramsToScan;
+            paramsToScan = rest;
+        }
     }
 
-    if (node.parameters) {
+    if (paramsToScan) {
       const extractUrlsFromObject = (obj: any, path: string = ''): void => {
         Object.entries(obj).forEach(([key, value]: [string, any]) => {
           const currentPath = path ? `${path}.${key}` : key;
@@ -319,7 +328,7 @@ export function extractDomains(workflow: N8NWorkflow, workflowName: string): Dom
         });
       };
 
-      extractUrlsFromObject(node.parameters);
+      extractUrlsFromObject(paramsToScan);
     }
   });
 
