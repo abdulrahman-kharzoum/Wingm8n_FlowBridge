@@ -18,16 +18,19 @@ interface WorkflowCallsComparisonProps {
 }
 
 // Helper to visualize a simple chain node
-const ChainNode = ({ name, type = 'default' }: { name: string; type?: 'default' | 'source' | 'target' | 'new' }) => {
+const ChainNode = ({ name, id, type = 'default' }: { name: string; id?: string; type?: 'default' | 'source' | 'target' | 'new' }) => {
     let bgClass = "bg-slate-800 border-slate-700 text-slate-200";
     if (type === 'source') bgClass = "bg-blue-500/10 border-blue-500/30 text-blue-300";
     if (type === 'target') bgClass = "bg-purple-500/10 border-purple-500/30 text-purple-300";
     if (type === 'new') bgClass = "bg-emerald-500/10 border-emerald-500/30 text-emerald-300";
 
     return (
-        <div className={`px-3 py-1.5 rounded-md border text-xs font-mono font-medium shadow-sm flex items-center gap-2 ${bgClass}`}>
-            <Workflow className="w-3 h-3 opacity-50" />
-            {name}
+        <div className={`px-3 py-1.5 rounded-md border text-xs font-mono font-medium shadow-sm flex flex-col gap-0.5 ${bgClass}`}>
+            <div className="flex items-center gap-2">
+                <Workflow className="w-3 h-3 opacity-50" />
+                <span>{name}</span>
+            </div>
+            {id && <span className="text-[10px] opacity-60 pl-5 break-all">{id}</span>}
         </div>
     );
 };
@@ -134,7 +137,7 @@ export default function WorkflowCallsComparison({
                                             {mainCalls.map((call, idx) => (
                                                 <div key={idx} className="flex items-center gap-2">
                                                     <ChainArrow />
-                                                    <ChainNode name={call.targetWorkflow} type="target" />
+                                                    <ChainNode name={call.targetWorkflowName || call.targetWorkflow} id={call.targetWorkflow} type="target" />
                                                 </div>
                                             ))}
                                         </div>
@@ -165,7 +168,11 @@ export default function WorkflowCallsComparison({
                                             {stagingCalls.map((call, idx) => (
                                                 <div key={idx} className="flex items-center gap-2">
                                                     <ChainArrow />
-                                                    <ChainNode name={call.targetWorkflow} type={calls.find((c: any) => c.targetWorkflow === call.targetWorkflow && c.inMain) ? 'target' : 'new'} />
+                                                    <ChainNode
+                                                        name={call.targetWorkflowName || call.targetWorkflow}
+                                                        id={call.targetWorkflow}
+                                                        type={calls.find((c: any) => c.targetWorkflow === call.targetWorkflow && c.inMain) ? 'target' : 'new'}
+                                                    />
                                                 </div>
                                             ))}
                                         </div>
@@ -225,12 +232,15 @@ export default function WorkflowCallsComparison({
                                                             checked={isActive}
                                                             onCheckedChange={() => toggleCall(callObj)}
                                                         />
-                                                        <label
-                                                            htmlFor={`call-${source}-${target}`}
-                                                            className={`text-sm cursor-pointer select-none ${isActive ? 'text-white' : 'text-slate-400'}`}
-                                                        >
-                                                            {target}
-                                                        </label>
+                                                        <div className="flex flex-col">
+                                                            <label
+                                                                htmlFor={`call-${source}-${target}`}
+                                                                className={`text-sm cursor-pointer select-none font-medium ${isActive ? 'text-white' : 'text-slate-400'}`}
+                                                            >
+                                                                {callObj.targetWorkflowName || target}
+                                                            </label>
+                                                            <span className="text-[10px] text-slate-500 font-mono">{target}</span>
+                                                        </div>
                                                     </div>
                                                     
                                                     <div className="flex gap-1">

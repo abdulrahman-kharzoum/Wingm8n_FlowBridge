@@ -27,11 +27,6 @@ export default function CredentialsComparison({
   const [selections, setSelections] = useState<Record<string, 'staging' | 'main' | 'keep-both'>>({});
 
   const filteredCredentials = credentials.filter((cred) => {
-    // Filter out unchanged credentials (same name in both branches)
-    if (cred.inMain && cred.inStaging && cred.mainName === cred.stagingName) {
-      return false;
-    }
-
     return (
       cred.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       cred.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -91,8 +86,7 @@ export default function CredentialsComparison({
           {filteredCredentials.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
               <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg">No changed credentials found</p>
-              {credentials.length > 0 && <p className="text-sm text-slate-500 mt-2">({credentials.length} total credentials detected)</p>}
+              <p className="text-lg">No credentials found</p>
             </div>
           ) : (
             <div className="rounded-lg border border-slate-700 overflow-hidden">

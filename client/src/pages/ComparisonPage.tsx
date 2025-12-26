@@ -299,21 +299,8 @@ export default function ComparisonPage() {
 
   const analysis = prComparisonQuery.data.analysis;
 
-  // Calculate filtered counts
-  const changedCredentialsCount = analysis.credentials.filter(
-      c => !(c.inMain && c.inStaging && c.mainName === c.stagingName)
-  ).length;
-
-  const changedDomainsCount = analysis.domains.filter(
-      d => !(d.mainUrl && d.stagingUrl && d.mainUrl === d.stagingUrl)
-  ).length;
-
-  const changedWorkflowCallsCount = analysis.workflowCalls.filter(
-      c => !((c as any).inMain && (c as any).inStaging)
-  ).length;
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 flex flex-col">
       {/* Header */}
       <nav className="border-b border-slate-700/50 backdrop-blur-sm bg-slate-900/50 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
@@ -351,73 +338,74 @@ export default function ComparisonPage() {
       </nav>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="space-y-6">
+      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 overflow-hidden flex flex-col">
+          <div className="flex-1 flex flex-col gap-6">
             {/* PR Summary */}
-            <Card className="bg-gradient-to-r from-accent/10 to-accent/5 border-accent/20">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-accent" />
-                  PR #{prComparisonQuery.data.pr.number}: {prComparisonQuery.data.pr.title}
-                </CardTitle>
-                <CardDescription>
-                    {prComparisonQuery.data.pr.head} → {prComparisonQuery.data.pr.base} • {prComparisonQuery.data.filesChanged} workflow files changed
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div>
-                    <div className="text-2xl font-bold text-accent">
-                      {changedCredentialsCount} <span className="text-sm font-normal text-slate-500">/ {analysis.credentials.length}</span>
+            <div className="flex-shrink-0">
+                <Card className="bg-gradient-to-r from-accent/10 to-accent/5 border-accent/20">
+                <CardHeader className="py-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                    <CheckCircle className="w-5 h-5 text-accent" />
+                    PR #{prComparisonQuery.data.pr.number}: {prComparisonQuery.data.pr.title}
+                    </CardTitle>
+                    <CardDescription>
+                        {prComparisonQuery.data.pr.head} → {prComparisonQuery.data.pr.base} • {prComparisonQuery.data.filesChanged} workflow files changed
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="py-4 pt-0">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div>
+                        <div className="text-xl font-bold text-accent">
+                        {analysis.credentials.length}
+                        </div>
+                        <p className="text-xs text-slate-400">Total Credentials</p>
                     </div>
-                    <p className="text-sm text-slate-400">Changed Credentials</p>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-accent">
-                      {changedDomainsCount} <span className="text-sm font-normal text-slate-500">/ {analysis.domains.length}</span>
+                    <div>
+                        <div className="text-xl font-bold text-accent">
+                        {analysis.domains.length}
+                        </div>
+                        <p className="text-xs text-slate-400">Total Domains</p>
                     </div>
-                    <p className="text-sm text-slate-400">Changed Domains</p>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-accent">
-                      {changedWorkflowCallsCount} <span className="text-sm font-normal text-slate-500">/ {analysis.workflowCalls.length}</span>
+                    <div>
+                        <div className="text-xl font-bold text-accent">
+                        {analysis.workflowCalls.length}
+                        </div>
+                        <p className="text-xs text-slate-400">Total Calls</p>
                     </div>
-                    <p className="text-sm text-slate-400">Changed Calls</p>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-accent">
-                      {(analysis.nodeChanges?.length || 0)}
+                    <div>
+                        <div className="text-xl font-bold text-accent">
+                        {(analysis.nodeChanges?.length || 0)}
+                        </div>
+                        <p className="text-xs text-slate-400">Node Changes</p>
                     </div>
-                    <p className="text-sm text-slate-400">Node Changes</p>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-red-400">
-                      {analysis.secrets.length}
+                    <div>
+                        <div className="text-xl font-bold text-red-400">
+                        {analysis.secrets.length}
+                        </div>
+                        <p className="text-xs text-slate-400">Secrets Detected</p>
                     </div>
-                    <p className="text-sm text-slate-400">Secrets Detected</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                    </div>
+                </CardContent>
+                </Card>
 
-             {/* Secrets Warning */}
-             {analysis.secrets.length > 0 && (
-                <Alert className="bg-red-500/10 border-red-500/50 text-red-400">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>
-                        Warning: {analysis.secrets.length} hardcoded secrets detected in the modified workflows!
-                    </AlertDescription>
-                </Alert>
-            )}
-
+                {/* Secrets Warning */}
+                {analysis.secrets.length > 0 && (
+                    <Alert className="mt-4 bg-red-500/10 border-red-500/50 text-red-400">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                            Warning: {analysis.secrets.length} hardcoded secrets detected in the modified workflows!
+                        </AlertDescription>
+                    </Alert>
+                )}
+            </div>
 
             {/* Comparison Tabs */}
-            <Card className="bg-slate-800/50 border-slate-700">
-              <CardHeader>
-                <CardTitle>Detailed Analysis</CardTitle>
+            <Card className="bg-slate-800/50 border-slate-700 flex-1 flex flex-col overflow-hidden">
+              <CardHeader className="py-4 flex-shrink-0">
+                <CardTitle className="text-lg">Detailed Analysis</CardTitle>
                 <CardDescription>Review extracted information from the PR</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex-1 overflow-auto min-h-0 pb-6">
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                   <TabsList className="grid w-full grid-cols-5 bg-slate-700/30 border border-slate-600/30 overflow-x-auto">
                     <TabsTrigger value="credentials" className="flex items-center gap-2">
@@ -483,7 +471,7 @@ export default function ComparisonPage() {
             </Card>
 
             {/* Actions */}
-            <div className="flex justify-end gap-4 sticky bottom-8 bg-slate-900/90 p-4 rounded-lg border border-slate-800 backdrop-blur shadow-2xl z-40">
+            <div className="flex-shrink-0 flex justify-end gap-4 sticky bottom-0 bg-slate-900/95 p-4 border-t border-slate-800 backdrop-blur z-40 mt-auto">
                 <Button variant="outline" onClick={() => setSelectedRepo(null)}>
                     Cancel
                 </Button>

@@ -47,6 +47,7 @@ export interface DomainDiff {
 export interface WorkflowCall {
   sourceWorkflow: string;
   targetWorkflow: string;
+  targetWorkflowName?: string;
   nodeId: string;
   nodeName: string;
 }

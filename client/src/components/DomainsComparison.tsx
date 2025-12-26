@@ -26,11 +26,6 @@ export default function DomainsComparison({ domains, onDomainSelected }: Domains
 
   // Filter out non-http/https URLs and apply search
   const filteredDomains = domains.filter((domain) => {
-    // Filter out unchanged domains
-    if (!domain.isDifferent) {
-        return false;
-    }
-
     // Only show http/https URLs
     const isHttp = (url?: string) => url && (url.startsWith('http://') || url.startsWith('https://'));
     
@@ -99,8 +94,7 @@ export default function DomainsComparison({ domains, onDomainSelected }: Domains
           {filteredDomains.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
               <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg">No changed HTTP/HTTPS domains found</p>
-              {domains.length > 0 && <p className="text-sm text-slate-500 mt-2">({domains.length} total domains detected)</p>}
+              <p className="text-lg">No HTTP/HTTPS domains found</p>
             </div>
           ) : (
              <div className="rounded-lg border border-slate-700 overflow-hidden">

@@ -250,12 +250,20 @@ export function extractWorkflowCalls(workflow: N8NWorkflow, workflowName: string
       // The parameter might be a simple string (workflowId) OR an object depending on the node version/config
       // We should check different possible locations for the target workflow ID/name
       let targetWorkflow = node.parameters?.workflowId;
+      let targetWorkflowName = node.parameters?.cachedResultName as string | undefined;
 
       // Sometimes it might be in 'source' or 'workflow'
       if (typeof targetWorkflow === 'object') {
           // It's an object, try to find a name or id inside, or stringify it safely
           // Common patterns: { mode: 'id', value: '...' } or { __rl: true, value: '...', mode: 'id' }
-          const val = (targetWorkflow as any)?.value;
+          const paramObj = targetWorkflow as any;
+          const val = paramObj?.value;
+          
+          // Try to extract cachedResultName from the object if not found at top level
+          if (!targetWorkflowName && paramObj?.cachedResultName) {
+              targetWorkflowName = paramObj.cachedResultName;
+          }
+
           if (val) {
              targetWorkflow = val;
           } else {
@@ -276,6 +284,7 @@ export function extractWorkflowCalls(workflow: N8NWorkflow, workflowName: string
         calls.push({
           sourceWorkflow: workflowName,
           targetWorkflow: targetWorkflow as string,
+          targetWorkflowName: targetWorkflowName,
           nodeId: node.id,
           nodeName: node.name,
         });
