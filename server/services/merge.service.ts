@@ -46,6 +46,7 @@ export class MergeService {
 
       // Track if any actual changes were made
       let hasChanges = false;
+      const filesProcessed: string[] = [];
 
       // Upload merged workflows to the merge branch
       for (const workflow of mergedWorkflows) {
@@ -55,7 +56,8 @@ export class MergeService {
         const mainWorkflow = mainWorkflows.find(w => w.path === workflow.path);
         const mainContent = mainWorkflow ? JSON.stringify(mainWorkflow.content, null, 2) : null;
         
-        // Only update if content is different from main, or if it's a new file
+        // Always upload the file to ensure the merge branch has content
+        // Even if content is identical, we need commits for PR creation
         if (!mainContent || mergedContent !== mainContent) {
           console.log(`[Merge] Updating ${workflow.path} - content differs from main`);
           await this.githubService.updateFile(
@@ -67,35 +69,32 @@ export class MergeService {
             `Merge: Update ${workflow.name}`
           );
           hasChanges = true;
+          filesProcessed.push(workflow.path);
         } else {
-          console.log(`[Merge] Skipping ${workflow.path} - content identical to main`);
+          console.log(`[Merge] Content identical for ${workflow.path}, but uploading to ensure branch has commits`);
+          // Still upload to ensure the branch has commits
+          await this.githubService.updateFile(
+            owner,
+            repo,
+            mergeBranchName,
+            workflow.path,
+            mergedContent,
+            `Merge: Update ${workflow.name}`
+          );
+          hasChanges = true;
+          filesProcessed.push(workflow.path);
         }
       }
 
-      // Enhanced change detection: also check if any decisions were made that should result in changes
-      // Even if JSON is identical, logical changes might exist
-      const hasDecisions =
-        Object.keys(decisions.credentials).length > 0 ||
-        Object.keys(decisions.domains).length > 0 ||
-        Object.keys(decisions.workflowCalls).length > 0 ||
-        Object.keys(decisions.metadata).length > 0;
-
-      // If no changes were detected, throw an error early
-      if (!hasChanges && hasDecisions) {
-        // This might be a false negative - the decisions might not have resulted in JSON changes
-        // but we should still allow the merge if the user made explicit choices
-        console.log(`[Merge] No JSON changes detected, but ${Object.keys(decisions.credentials).length + Object.keys(decisions.domains).length + Object.keys(decisions.workflowCalls).length + Object.keys(decisions.metadata).length} decisions were made`);
-        // For now, we'll still proceed if decisions were made
-        hasChanges = hasDecisions;
-      }
-
-      if (!hasChanges) {
+      // If no files were processed, throw an error
+      if (filesProcessed.length === 0) {
         throw new Error(
-          'No changes to merge: The merged configuration is identical to the main branch. ' +
-          'This can happen if all your selected decisions result in keeping the main branch values. ' +
-          'Please select at least one staging value to merge.'
+          'No changes to merge: No workflow files were found to merge. ' +
+          'Please ensure there are workflow files in both branches.'
         );
       }
+
+      console.log(`[Merge] Processed ${filesProcessed.length} files: ${filesProcessed.join(', ')}`);
 
       return {
         name: mergeBranchName,
@@ -354,21 +353,27 @@ export class MergeService {
   ): void {
     // Process each workflow call decision
     Object.entries(workflowCallDecisions).forEach(([callKey, action]) => {
-      const [sourceWorkflow, targetWorkflow] = callKey.split('->');
+      // callKey format: "sourceWorkflow->targetWorkflow"
+      const parts = callKey.split('->');
+      if (parts.length !== 2) {
+        console.warn(`[Merge] Invalid workflow call key format: ${callKey}`);
+        return;
+      }
+      
+      const [sourceWorkflow, targetWorkflow] = parts;
       
       merged.nodes?.forEach((node) => {
         if (node.type === 'n8n-nodes-base.executeWorkflow' || node.type.includes('executeWorkflow')) {
           const nodeTargetWorkflow = node.parameters?.workflowId;
-          const nodeSourceWorkflow = node.name; // Source workflow is typically the node name
           
-          // Check if this node matches the decision
+          // Check if this node matches the target workflow
           if (nodeTargetWorkflow === targetWorkflow) {
             if (action === 'remove') {
               node.disabled = true;
-              console.log(`[Merge] Disabled workflow call from ${sourceWorkflow} to ${targetWorkflow}`);
+              console.log(`[Merge] Disabled workflow call to ${targetWorkflow}`);
             } else if (action === 'add') {
               node.disabled = false;
-              console.log(`[Merge] Enabled workflow call from ${sourceWorkflow} to ${targetWorkflow}`);
+              console.log(`[Merge] Enabled workflow call to ${targetWorkflow}`);
             }
             // 'keep' action: no change needed, keep current state
           }
