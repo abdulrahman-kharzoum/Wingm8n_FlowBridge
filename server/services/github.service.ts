@@ -57,6 +57,12 @@ export class GitHubService {
   constructor(accessToken: string) {
     this.octokit = new Octokit({
       auth: accessToken,
+      request: {
+        headers: {
+          'If-None-Match': '', // Prevent caching
+          'Cache-Control': 'no-cache',
+        },
+      },
     });
   }
 
@@ -124,6 +130,23 @@ export class GitHubService {
         return null;
       }
       console.error(`[GitHub] Failed to fetch branch ${branchName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get the SHA for a branch
+   */
+  async getBranchSha(owner: string, repo: string, branchName: string): Promise<string> {
+    try {
+      const response = await this.octokit.rest.repos.getBranch({
+        owner,
+        repo,
+        branch: branchName,
+      });
+      return response.data.commit.sha;
+    } catch (error) {
+      console.error(`[GitHub] Failed to get SHA for branch ${branchName}:`, error);
       throw error;
     }
   }
@@ -352,6 +375,24 @@ export class GitHubService {
   }
 
   /**
+   * Get file content blob by SHA
+   */
+  async getBlob(owner: string, repo: string, fileSha: string): Promise<string> {
+    try {
+      const response = await this.octokit.rest.git.getBlob({
+        owner,
+        repo,
+        file_sha: fileSha,
+      });
+
+      return Buffer.from(response.data.content, 'base64').toString('utf-8');
+    } catch (error) {
+      console.error(`[GitHub] Failed to get blob ${fileSha}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Compare two branches and get the diff
    */
   async compareBranches(
@@ -409,11 +450,23 @@ export async function fetchBranchWorkflows(
     // Find all JSON files that could be N8N workflows
     const workflowFiles = await service.findWorkflowFiles(owner, repo, branch, workflowPath);
 
+    // Resolve branch to specific SHA to ensure we're reading the exact state
+    // This avoids race conditions or caching issues with mutable branch refs
+    let branchSha = branch;
+    try {
+      branchSha = await service.getBranchSha(owner, repo, branch);
+      console.log(`[GitHub] Resolved branch ${branch} to commit ${branchSha}`);
+    } catch (e) {
+      console.warn(`[GitHub] Could not resolve SHA for branch ${branch}, using ref directly`);
+    }
+
     // Fetch content of each workflow file
     for (const file of workflowFiles) {
       try {
-        const fileContent = await service.getFileContent(owner, repo, branch, file.path);
-        const workflowData = JSON.parse(fileContent.content) as N8NWorkflow;
+        // Use getBlob with the specific file SHA to ensure we get the exact version for this branch
+        // This prevents issues where getContent might return cached or incorrect ref versions
+        const contentStr = await service.getBlob(owner, repo, file.sha);
+        const workflowData = JSON.parse(contentStr) as N8NWorkflow;
 
         // Verify it's a valid N8N workflow by checking for nodes
         if (workflowData.nodes && Array.isArray(workflowData.nodes)) {

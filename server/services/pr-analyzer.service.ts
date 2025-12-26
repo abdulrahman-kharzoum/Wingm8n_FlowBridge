@@ -45,7 +45,15 @@ export class PRAnalyzerService {
   private octokit: Octokit;
 
   constructor(accessToken: string) {
-    this.octokit = new Octokit({ auth: accessToken });
+    this.octokit = new Octokit({
+      auth: accessToken,
+      request: {
+        headers: {
+          'If-None-Match': '', // Prevent caching
+          'Cache-Control': 'no-cache',
+        },
+      },
+    });
   }
 
   async analyzePR(owner: string, repo: string, prNumber: number): Promise<PRAnalysisResult> {
@@ -180,7 +188,11 @@ export class PRAnalyzerService {
     const getDomainKey = (domain: any) => {
         const match = domain.url.match(/^([A-Z]+)\s+(.+)\s+\(Webhook\)$/);
         if (match) {
-            // Use path as key for webhooks to group method changes (e.g. GET -> POST)
+            // Use nodeId as key for webhooks to correctly group them even if path changes
+            if (domain.nodeId) {
+                return `webhook:${domain.nodeId}`;
+            }
+            // Fallback to path if nodeId is somehow missing (legacy support)
             return `webhook:${match[2]}`;
         }
         return domain.url;
@@ -193,7 +205,8 @@ export class PRAnalyzerService {
     for (const result of results) {
         // Compare Metadata and Nodes if both versions exist
         if (result.base?.content && result.head?.content) {
-            const mDiffs = compareMetadata(result.base.metadata, result.head.metadata);
+            // compareMetadata(staging, main) -> compareMetadata(head, base)
+            const mDiffs = compareMetadata(result.head.metadata, result.base.metadata);
             if (mDiffs.length > 0) {
                 metadataDiffs.push({
                     filename: result.filename,

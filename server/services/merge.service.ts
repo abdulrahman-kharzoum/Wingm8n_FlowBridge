@@ -31,12 +31,23 @@ export class MergeService {
       const randomSuffix = Math.random().toString(36).substring(7);
       const mergeBranchName = `merge/${stagingBranch}-to-${mainBranch}/${timestamp}-${randomSuffix}`;
 
+      console.log(`\n=== MERGE OPERATION STARTED ===`);
+      console.log(`Repository: ${owner}/${repo}`);
+      console.log(`Branches: ${stagingBranch} -> ${mainBranch}`);
+      console.log(`Target: ${mergeBranchName}`);
+      console.log(`\nDecisions received:`);
+      console.log(`  Credentials: ${Object.keys(decisions.credentials).length} - ${JSON.stringify(decisions.credentials, null, 2)}`);
+      console.log(`  Domains: ${Object.keys(decisions.domains).length} - ${JSON.stringify(decisions.domains, null, 2)}`);
+      console.log(`  Workflow Calls: ${Object.keys(decisions.workflowCalls).length} - ${JSON.stringify(decisions.workflowCalls, null, 2)}`);
+      console.log(`  Metadata: ${Object.keys(decisions.metadata).length} - ${JSON.stringify(decisions.metadata, null, 2)}`);
+
       // Create the merge branch from main
+      console.log(`\n[Step 1] Creating merge branch from main...`);
       await this.githubService.createBranch(owner, repo, mergeBranchName, mainBranch);
+      console.log(`[Step 1] ✓ Branch created: ${mergeBranchName}`);
 
-      console.log(`[Merge] Starting merge for ${owner}/${repo}. Target: ${mainBranch}, Source: ${stagingBranch}`);
-      console.log(`[Merge] Decision counts: Credentials=${Object.keys(decisions.credentials).length}, Domains=${Object.keys(decisions.domains).length}, Metadata=${Object.keys(decisions.metadata).length}`);
-
+      console.log(`\n[Step 2] Starting workflow merge process...`);
+      
       // Merge workflows based on decisions
       const mergedWorkflows = this.mergeWorkflows(
         stagingWorkflows,
@@ -47,6 +58,8 @@ export class MergeService {
       // Track if any actual changes were made
       let hasChanges = false;
       const filesProcessed: string[] = [];
+
+      console.log(`\n[Step 3] Processing ${mergedWorkflows.length} merged workflows...`);
 
       // Upload merged workflows to the merge branch
       for (const workflow of mergedWorkflows) {
@@ -59,7 +72,7 @@ export class MergeService {
         // Always upload the file to ensure the merge branch has content
         // Even if content is identical, we need commits for PR creation
         if (!mainContent || mergedContent !== mainContent) {
-          console.log(`[Merge] Updating ${workflow.path} - content differs from main`);
+          console.log(`[Step 3] Updating ${workflow.path} - content differs from main`);
           await this.githubService.updateFile(
             owner,
             repo,
@@ -71,7 +84,7 @@ export class MergeService {
           hasChanges = true;
           filesProcessed.push(workflow.path);
         } else {
-          console.log(`[Merge] Content identical for ${workflow.path}, but uploading to ensure branch has commits`);
+          console.log(`[Step 3] Content identical for ${workflow.path}, but uploading to ensure branch has commits`);
           // Still upload to ensure the branch has commits
           await this.githubService.updateFile(
             owner,
@@ -94,7 +107,11 @@ export class MergeService {
         );
       }
 
-      console.log(`[Merge] Processed ${filesProcessed.length} files: ${filesProcessed.join(', ')}`);
+      console.log(`\n[Step 4] Finalizing merge...`);
+      console.log(`  Files processed: ${filesProcessed.length}`);
+      console.log(`  Files: ${filesProcessed.join(', ')}`);
+      console.log(`  Has changes: ${hasChanges}`);
+      console.log(`\n=== MERGE OPERATION COMPLETED SUCCESSFULLY ===\n`);
 
       return {
         name: mergeBranchName,
@@ -117,6 +134,8 @@ export class MergeService {
     mainWorkflows: Array<{ name: string; path: string; content: N8NWorkflow }>,
     decisions: MergeDecision
   ): Array<{ name: string; path: string; content: N8NWorkflow }> {
+    console.log(`[Merge] Merging workflows: ${stagingWorkflows.length} staging, ${mainWorkflows.length} main`);
+    
     const mergedWorkflows: Array<{ name: string; path: string; content: N8NWorkflow }> = [];
     const processedPaths = new Set<string>();
 
@@ -125,6 +144,7 @@ export class MergeService {
       const stagingWorkflow = stagingWorkflows.find((w) => w.path === mainWorkflow.path);
 
       if (stagingWorkflow) {
+        console.log(`[Merge] Processing shared workflow: ${mainWorkflow.path}`);
         // Merge the workflows
         const merged = this.mergeWorkflowContent(
           stagingWorkflow.content,
@@ -141,6 +161,7 @@ export class MergeService {
 
         processedPaths.add(mainWorkflow.path);
       } else {
+        console.log(`[Merge] Main-only workflow: ${mainWorkflow.path}`);
         // Keep main workflow as is
         mergedWorkflows.push(mainWorkflow);
         processedPaths.add(mainWorkflow.path);
@@ -150,10 +171,12 @@ export class MergeService {
     // Add staging-only workflows
     for (const stagingWorkflow of stagingWorkflows) {
       if (!processedPaths.has(stagingWorkflow.path)) {
+        console.log(`[Merge] Staging-only workflow: ${stagingWorkflow.path}`);
         mergedWorkflows.push(stagingWorkflow);
       }
     }
 
+    console.log(`[Merge] Result: ${mergedWorkflows.length} workflows in merge`);
     return mergedWorkflows;
   }
 
@@ -166,8 +189,25 @@ export class MergeService {
     decisions: MergeDecision,
     filename: string
   ): N8NWorkflow {
-    // Strategy: Staging is the BASE, and we only "Keep Main" for specific protected values (credentials/domains).
+    console.log(`[Merge] Processing workflow: ${filename}`);
+    console.log(`[Merge] Decisions: C=${Object.keys(decisions.credentials).length}, D=${Object.keys(decisions.domains).length}, WC=${Object.keys(decisions.workflowCalls).length}, M=${Object.keys(decisions.metadata).length}`);
+    
+    // Strategy: Start with staging as base, then apply decisions to override specific values
     const merged: N8NWorkflow = JSON.parse(JSON.stringify(stagingWorkflow));
+
+    console.log(`[Merge] Base workflow (staging):`, {
+      versionId: merged.versionId,
+      nodes: merged.nodes?.length || 0
+    });
+    
+    console.log(`[Merge] Main workflow:`, {
+      versionId: mainWorkflow.versionId,
+      nodes: mainWorkflow.nodes?.length || 0
+    });
+
+    if (merged.versionId === mainWorkflow.versionId) {
+      console.warn(`[Merge] WARNING: Staging and Main versionIds are identical (${merged.versionId}). This suggests no changes or a potential fetch issue.`);
+    }
 
     // Apply credential decisions
     this.applyCredentialDecisions(merged, stagingWorkflow, mainWorkflow, decisions.credentials);
@@ -192,6 +232,12 @@ export class MergeService {
         filename
     );
 
+    console.log(`[Merge] Final merged workflow:`, {
+      versionId: merged.versionId,
+      nodes: merged.nodes?.length || 0
+    });
+    
+    console.log(`[Merge] Completed merge for ${filename}`);
     return merged;
   }
 
@@ -204,14 +250,17 @@ export class MergeService {
     mainWorkflow: N8NWorkflow,
     credentialDecisions: Record<string, 'staging' | 'main' | 'keep-both'>
   ): void {
+    console.log('[Merge] Applying credential decisions:', credentialDecisions);
+    
     if (!credentialDecisions || Object.keys(credentialDecisions).length === 0) {
+      console.log('[Merge] No credential decisions to apply');
       return;
     }
 
-    console.log('[Merge] Applying credential decisions:', credentialDecisions);
-
     // Process each decision
     Object.entries(credentialDecisions).forEach(([decidedCredId, source]) => {
+      console.log(`[Merge] Processing credential decision: ${decidedCredId} -> ${source}`);
+      
       if (source === 'main') {
         // Find which nodes in main use this credential ID
         mainWorkflow.nodes?.forEach(mainNode => {
@@ -235,9 +284,9 @@ export class MergeService {
 
                    // Cleanup: Remove credentials types added in staging but not in main for this node
                    Object.keys(mergedNode.credentials).forEach(key => {
-                      if (!mainNode.credentials?.[key]) {
-                         delete mergedNode.credentials![key];
-                      }
+                     if (!mainNode.credentials?.[key]) {
+                        delete mergedNode.credentials![key];
+                     }
                    });
                 }
               }
@@ -250,20 +299,22 @@ export class MergeService {
     // Handle staging-only credentials: if 'main' source is selected, it means "exclude"
     Object.entries(credentialDecisions).forEach(([decidedCredId, source]) => {
         if (source === 'main') {
-            const existsInMain = mainWorkflow.nodes?.some(n => 
+            const existsInMain = mainWorkflow.nodes?.some(n =>
                 Object.values(n.credentials || {}).some((c: any) => c.id === decidedCredId)
             );
             
             if (!existsInMain) {
-                merged.nodes?.forEach(node => {
-                    if (node.credentials) {
-                        Object.entries(node.credentials).forEach(([key, cred]: [string, any]) => {
-                            if (cred.id === decidedCredId) {
-                                delete node.credentials![key];
-                            }
-                        });
-                    }
-                });
+              console.log(`[Merge] Excluding staging-only credential: ${decidedCredId}`);
+              merged.nodes?.forEach(node => {
+                  if (node.credentials) {
+                      Object.entries(node.credentials).forEach(([key, cred]: [string, any]) => {
+                          if (cred.id === decidedCredId) {
+                              console.log(`[Merge] Removed credential ${key} from node ${node.name}`);
+                              delete node.credentials![key];
+                          }
+                      });
+                  }
+              });
             }
         }
     });
@@ -278,13 +329,22 @@ export class MergeService {
     mainWorkflow: N8NWorkflow,
     domainDecisions: Record<string, { selected: 'staging' | 'main'; url: string }>
   ): void {
+    console.log('[Merge] Applying domain decisions:', domainDecisions);
+    
     if (!domainDecisions || Object.keys(domainDecisions).length === 0) {
+      console.log('[Merge] No domain decisions to apply');
       return;
     }
 
     const urlPatterns = ['url', 'webhookUrl', 'path', 'endpoint', 'baseUrl', 'apiUrl'];
 
     Object.entries(domainDecisions).forEach(([decisionKey, decision]) => {
+      console.log(`[Merge] Processing domain decision: ${decisionKey} -> ${decision.url} (${decision.selected})`);
+      
+      // CRITICAL DEBUG: Check what URLs are actually in the workflows
+      console.log(`[Merge] Debug - Decision URL: ${decision.url}`);
+      console.log(`[Merge] Debug - Decision selected: ${decision.selected}`);
+      
       const targetUrl = decision.url;
       let decisionPath = decisionKey;
       let isWebhookDecision = false;
@@ -292,12 +352,24 @@ export class MergeService {
       if (webhookMatch) {
           decisionPath = webhookMatch[1];
           isWebhookDecision = true;
+          console.log(`[Merge] Webhook detected: ${decisionPath}`);
       }
 
       const targetValue = isWebhookDecision && decision.url.match(/^[A-Z]+\s+(.+)\s+\(Webhook\)$/)
           ? decision.url.match(/^[A-Z]+\s+(.+)\s+\(Webhook\)$/)![1]
           : targetUrl;
 
+      let targetMethod: string | null = null;
+      if (isWebhookDecision) {
+          const methodMatch = decision.url.match(/^([A-Z]+)\s+/);
+          if (methodMatch) targetMethod = methodMatch[1];
+      }
+
+      let changesApplied = 0;
+      
+      // Check what URLs exist in the workflows
+      console.log(`[Merge] Debug - Looking for URLs matching: ${decisionKey} or ${decisionPath}`);
+      
       merged.nodes?.forEach(node => {
         if (node.parameters) {
           const updateUrlsInObject = (obj: any, path: string = ''): void => {
@@ -306,10 +378,28 @@ export class MergeService {
               
               if (urlPatterns.some(pattern => key.toLowerCase().includes(pattern))) {
                 if (typeof value === 'string') {
+                  // Log all URL parameters found
+                  if (value.includes('f58b8f82-0566-4965-a570-6e42cb177268')) {
+                    console.log(`[Merge] Debug - Found webhook URL in node ${node.name}, param ${key}: ${value}`);
+                  }
+                  
                   // Check if this URL matches the decision key
                   if (value === decisionKey || (isWebhookDecision && value === decisionPath)) {
                     // Apply the selected value directly
+                    console.log(`[Merge] Updating URL in node ${node.name}: ${value} -> ${targetValue}`);
                     obj[key] = targetValue;
+                    
+                    // Handle httpMethod for webhooks
+                    if (isWebhookDecision && targetMethod) {
+                         // We found the path/ID in this object 'obj'.
+                         // For a webhook node, 'obj' should be the parameters object which also holds httpMethod.
+                         if (node.type.includes('webhook')) {
+                             console.log(`[Merge] Updating httpMethod in node ${node.name}: ${obj.httpMethod} -> ${targetMethod}`);
+                             obj.httpMethod = targetMethod;
+                         }
+                    }
+
+                    changesApplied++;
                     return;
                   }
                 }
@@ -329,6 +419,8 @@ export class MergeService {
           updateUrlsInObject(node.parameters);
         }
       });
+
+      console.log(`[Merge] Applied ${changesApplied} domain changes for ${decisionKey}`);
     });
   }
 
@@ -351,8 +443,19 @@ export class MergeService {
     mainWorkflow: N8NWorkflow,
     workflowCallDecisions: Record<string, 'add' | 'remove' | 'keep'>
   ): void {
+    console.log('[Merge] Applying workflow call decisions:', workflowCallDecisions);
+    console.log(`[Merge] Workflow call decisions keys:`, Object.keys(workflowCallDecisions));
+    console.log(`[Merge] Workflow call decisions count:`, Object.keys(workflowCallDecisions).length);
+    
+    if (!workflowCallDecisions || Object.keys(workflowCallDecisions).length === 0) {
+      console.log('[Merge] No workflow call decisions to apply');
+      return;
+    }
+
     // Process each workflow call decision
     Object.entries(workflowCallDecisions).forEach(([callKey, action]) => {
+      console.log(`[Merge] Processing workflow call decision: ${callKey} -> ${action}`);
+      
       // callKey format: "sourceWorkflow->targetWorkflow"
       const parts = callKey.split('->');
       if (parts.length !== 2) {
@@ -361,24 +464,37 @@ export class MergeService {
       }
       
       const [sourceWorkflow, targetWorkflow] = parts;
+      let changesApplied = 0;
+      
+      console.log(`[Merge] Looking for executeWorkflow nodes targeting: ${targetWorkflow}`);
       
       merged.nodes?.forEach((node) => {
         if (node.type === 'n8n-nodes-base.executeWorkflow' || node.type.includes('executeWorkflow')) {
           const nodeTargetWorkflow = node.parameters?.workflowId;
+          const nodeSourceWorkflow = node.name; // Source workflow is typically the node name
           
-          // Check if this node matches the target workflow
+          console.log(`[Merge] Found executeWorkflow node: ${node.name}, target=${nodeTargetWorkflow}, disabled=${node.disabled}`);
+          
+          // Check if this node matches the decision
           if (nodeTargetWorkflow === targetWorkflow) {
             if (action === 'remove') {
               node.disabled = true;
-              console.log(`[Merge] Disabled workflow call to ${targetWorkflow}`);
+              console.log(`[Merge] Disabled workflow call from ${sourceWorkflow} to ${targetWorkflow}`);
+              changesApplied++;
             } else if (action === 'add') {
               node.disabled = false;
-              console.log(`[Merge] Enabled workflow call to ${targetWorkflow}`);
+              console.log(`[Merge] Enabled workflow call from ${sourceWorkflow} to ${targetWorkflow}`);
+              changesApplied++;
+            } else if (action === 'keep') {
+              console.log(`[Merge] Keeping current state for workflow call from ${sourceWorkflow} to ${targetWorkflow}`);
             }
-            // 'keep' action: no change needed, keep current state
           }
         }
       });
+
+      if (changesApplied === 0) {
+        console.log(`[Merge] No matching nodes found for workflow call decision: ${callKey}`);
+      }
     });
   }
 
@@ -392,19 +508,58 @@ export class MergeService {
       metadataDecisions: Record<string, 'staging' | 'main'>,
       filename: string
   ): void {
-      if (!metadataDecisions) return;
+      console.log(`[Merge] Applying metadata decisions for ${filename}:`, metadataDecisions);
+      
+      if (!metadataDecisions) {
+          console.log(`[Merge] No metadata decisions for ${filename}`);
+          return;
+      }
+      
       const prefix = `${filename}-`;
+      let changesApplied = 0;
 
       Object.entries(metadataDecisions).forEach(([decisionKey, source]) => {
           if (decisionKey.startsWith(prefix)) {
               const key = decisionKey.substring(prefix.length);
+              console.log(`[Merge] Processing metadata decision: ${key} -> ${source}`);
+              
+              // Debug: Show what values are available - CRITICAL: Check if workflows are the same object
+              console.log(`[Merge] Debug - Staging workflow object:`, stagingWorkflow);
+              console.log(`[Merge] Debug - Main workflow object:`, mainWorkflow);
+              console.log(`[Merge] Debug - Are they the same object?`, stagingWorkflow === mainWorkflow);
+              console.log(`[Merge] Debug - Staging ${key}:`, stagingWorkflow[key]);
+              console.log(`[Merge] Debug - Main ${key}:`, mainWorkflow[key]);
+              console.log(`[Merge] Debug - Current merged ${key}:`, merged[key]);
+              
               if (source === 'main' && key in mainWorkflow) {
-                  merged[key] = mainWorkflow[key];
+                  const oldValue = merged[key];
+                  const newValue = mainWorkflow[key];
+                  
+                  if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+                    merged[key] = newValue;
+                    console.log(`[Merge] Updated metadata ${key}: ${oldValue} -> ${newValue} (from main)`);
+                    changesApplied++;
+                  } else {
+                    console.log(`[Merge] Metadata ${key} already matches main (${oldValue})`);
+                  }
               } else if (source === 'staging' && key in stagingWorkflow) {
-                  merged[key] = stagingWorkflow[key];
+                  const oldValue = merged[key];
+                  const newValue = stagingWorkflow[key];
+                  
+                  if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+                    merged[key] = newValue;
+                    console.log(`[Merge] Updated metadata ${key}: ${oldValue} -> ${newValue} (from staging)`);
+                    changesApplied++;
+                  } else {
+                     console.log(`[Merge] Metadata ${key} already matches staging (${oldValue})`);
+                  }
+              } else {
+                  console.log(`[Merge] Metadata key ${key} not found in ${source} workflow`);
               }
           }
       });
+
+      console.log(`[Merge] Applied ${changesApplied} metadata changes for ${filename}`);
   }
 
   /**
