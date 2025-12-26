@@ -104,6 +104,7 @@ export interface N8NNode {
   type: string;
   parameters?: Record<string, any>;
   credentials?: Record<string, { id: string; name: string }>;
+  disabled?: boolean;
 }
 
 export interface N8NWorkflow {
@@ -148,6 +149,9 @@ export interface MergeDecision {
   };
   workflowCalls: {
     [workflowName: string]: 'add' | 'remove' | 'keep';
+  };
+  metadata: {
+    [key: string]: 'staging' | 'main';
   };
 }
 

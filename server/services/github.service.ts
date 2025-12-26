@@ -129,6 +129,105 @@ export class GitHubService {
   }
 
   /**
+   * Create a new branch from a base branch
+   */
+  async createBranch(owner: string, repo: string, newBranch: string, baseBranch: string): Promise<void> {
+    try {
+      // Get the SHA of the base branch
+      const baseRef = await this.octokit.rest.git.getRef({
+        owner,
+        repo,
+        ref: `heads/${baseBranch}`,
+      });
+
+      const sha = baseRef.data.object.sha;
+
+      // Create the new branch
+      await this.octokit.rest.git.createRef({
+        owner,
+        repo,
+        ref: `refs/heads/${newBranch}`,
+        sha,
+      });
+    } catch (error: any) {
+      console.error(`[GitHub] Failed to create branch ${newBranch}:`, error);
+      // Enhance error message for common issues
+      if (error.status === 422 && error.message.includes('Reference already exists')) {
+          throw new Error(`Branch '${newBranch}' already exists. Please delete it or wait a moment before trying again.`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Update or create a file in the repository
+   */
+  async updateFile(
+    owner: string,
+    repo: string,
+    branch: string,
+    path: string,
+    content: string,
+    message: string
+  ): Promise<void> {
+    try {
+      // Check if file exists to get its SHA (for update)
+      let sha: string | undefined;
+      try {
+        const file = await this.getFileContent(owner, repo, branch, path);
+        sha = file.sha;
+      } catch (e) {
+        // File doesn't exist, will be created
+      }
+
+      await this.octokit.rest.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path,
+        message,
+        content: Buffer.from(content).toString('base64'),
+        branch,
+        sha,
+      });
+    } catch (error) {
+      console.error(`[GitHub] Failed to update file ${path}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a pull request
+   */
+  async createPullRequest(
+    owner: string,
+    repo: string,
+    title: string,
+    body: string,
+    head: string,
+    base: string
+  ): Promise<{ number: number; url: string; state: string }> {
+    try {
+      const response = await this.octokit.rest.pulls.create({
+        owner,
+        repo,
+        title,
+        body,
+        head,
+        base,
+      });
+
+      return {
+        number: response.data.number,
+        url: response.data.html_url,
+        state: response.data.state,
+      };
+    } catch (error) {
+      console.error(`[GitHub] Failed to create PR:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * List all files in a directory recursively
    */
   async listFilesInDirectory(
@@ -298,7 +397,7 @@ export async function fetchBranchWorkflows(
   owner: string,
   repo: string,
   branch: string,
-  workflowPath: string = '/'
+  workflowPath: string = ''
 ): Promise<BranchWorkflows> {
   try {
     const workflows: Array<{

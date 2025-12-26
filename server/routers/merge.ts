@@ -21,14 +21,16 @@ export const mergeRouter = router({
         stagingBranch: z.string(),
         mainBranch: z.string(),
         decisions: z.object({
-          credentials: z.record(z.enum(['staging', 'main', 'keep-both'])),
+          credentials: z.record(z.string(), z.enum(['staging', 'main', 'keep-both'])),
           domains: z.record(
+            z.string(),
             z.object({
               selected: z.enum(['staging', 'main']),
               url: z.string(),
             })
           ),
-          workflowCalls: z.record(z.enum(['add', 'remove', 'keep'])),
+          workflowCalls: z.record(z.string(), z.enum(['add', 'remove', 'keep'])),
+          metadata: z.record(z.string(), z.enum(['staging', 'main'])),
         }),
       })
     )

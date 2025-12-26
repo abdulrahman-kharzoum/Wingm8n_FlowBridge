@@ -8,6 +8,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Github,
   GitBranch,
   Key,
@@ -51,6 +59,11 @@ export default function ComparisonPage() {
     workflowCalls: {},
     metadata: {},
   });
+  const [showMergeSuccessDialog, setShowMergeSuccessDialog] = useState(false);
+  const [mergeResult, setMergeResult] = useState<{
+      branchName: string;
+      prUrl?: string;
+  } | null>(null);
 
   // Fetch comparison data
   // Use PR comparison if prNumber is present, otherwise fallback to branch comparison (or we can switch entirely)
@@ -66,11 +79,20 @@ export default function ComparisonPage() {
   const handleComparePR = async () => {
       if (!selectedRepo || !prNumber) return;
       try {
-          await prComparisonQuery.mutateAsync({
+          const result = await prComparisonQuery.mutateAsync({
               owner: selectedRepo.owner,
               repo: selectedRepo.repo,
               prNumber: parseInt(prNumber),
           });
+
+          // Update the selected branches based on the PR comparison
+          setSelectedRepo({
+              ...selectedRepo,
+              stagingBranch: result.pr.head,
+              mainBranch: result.pr.base
+          });
+          
+          toast.success(`PR #${result.pr.number} analyzed. Branches updated: ${result.pr.head} → ${result.pr.base}`);
       } catch (e) {
           console.error(e);
           toast.error("Failed to analyze PR");
@@ -107,14 +129,28 @@ export default function ComparisonPage() {
     });
   };
 
-  const handleDomainSelected = (url: string, selectedUrl: string | null) => {
+  const handleDomainSelected = (url: string, selectedUrl: string | null, source?: 'staging' | 'main') => {
     setMergeDecisions((prev) => {
         const newDomains = { ...prev.domains };
         if (selectedUrl === null) {
             delete newDomains[url];
         } else {
+            // Determine source based on which URL was passed
+            // The DomainsComparison passes either mainUrl or stagingUrl
+            // We need to check which one it matches in the analysis
+            const domainDiff = prComparisonQuery.data?.analysis.domains.find(d => d.url === url);
+            let determinedSource: 'staging' | 'main' = source || 'staging';
+            
+            if (domainDiff) {
+                if (selectedUrl === domainDiff.mainUrl) {
+                    determinedSource = 'main';
+                } else if (selectedUrl === domainDiff.stagingUrl) {
+                    determinedSource = 'staging';
+                }
+            }
+            
             newDomains[url] = {
-                selected: selectedUrl.includes('staging') ? 'staging' : 'main',
+                selected: determinedSource,
                 url: selectedUrl,
             };
         }
@@ -163,28 +199,37 @@ export default function ComparisonPage() {
         decisions: mergeDecisions as any, // Cast to any to bypass type check for now, as types are complex
       });
 
+      setMergeResult({ branchName: result.data.name });
+      setShowMergeSuccessDialog(true);
       toast.success('Merge branch created successfully!');
 
-      // Show option to create PR
-      const shouldCreatePR = window.confirm(
-        'Merge branch created! Would you like to create a pull request?'
-      );
+    } catch (error: any) {
+      console.error('Failed to create merge branch:', error);
+      // Extract error message if possible
+      const errorMessage = error.message || error.shape?.message || 'Failed to create merge branch. Please try again.';
+      toast.error(errorMessage);
+    }
+  };
 
-      if (shouldCreatePR) {
+  const handleCreatePR = async () => {
+      if (!selectedRepo || !mergeResult) return;
+      
+      try {
         const prResult = await createPullRequestMutation.mutateAsync({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
-          mergeBranchName: result.data.name,
+          mergeBranchName: mergeResult.branchName,
           targetBranch: selectedRepo.mainBranch,
         });
 
         toast.success('Pull request created!');
+        setMergeResult(prev => prev ? ({ ...prev, prUrl: prResult.data.url }) : null);
         window.open(prResult.data.url, '_blank');
+      } catch (error: any) {
+          console.error('Failed to create PR:', error);
+          const errorMessage = error.message || 'Failed to create PR.';
+          toast.error(errorMessage);
       }
-    } catch (error) {
-      console.error('Failed to create merge branch:', error);
-      toast.error('Failed to create merge branch. Please try again.');
-    }
   };
 
   if (!selectedRepo) {
@@ -298,6 +343,25 @@ export default function ComparisonPage() {
   }
 
   const analysis = prComparisonQuery.data.analysis;
+
+  // Validation Check: Are all items decided?
+  const totalCredentials = analysis.credentials.length;
+  const decidedCredentials = Object.keys(mergeDecisions.credentials).length;
+  
+  const totalDomains = analysis.domains.length;
+  const decidedDomains = Object.keys(mergeDecisions.domains).length;
+  
+  const totalCalls = analysis.workflowCalls.length;
+  const decidedCalls = Object.keys(mergeDecisions.workflowCalls).length;
+
+  const totalMetadata = analysis.metadata?.length || 0;
+  const decidedMetadata = Object.keys(mergeDecisions.metadata).length;
+
+  const isAllDecided =
+      decidedCredentials >= totalCredentials &&
+      decidedDomains >= totalDomains &&
+      decidedCalls >= totalCalls &&
+      decidedMetadata >= totalMetadata;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 flex flex-col">
@@ -472,13 +536,21 @@ export default function ComparisonPage() {
 
             {/* Actions */}
             <div className="flex-shrink-0 flex justify-end gap-4 sticky bottom-0 bg-slate-900/95 p-4 border-t border-slate-800 backdrop-blur z-40 mt-auto">
+                <div className="flex-1 text-sm text-slate-400 flex items-center">
+                    {!isAllDecided && (
+                        <span className="flex items-center text-amber-500">
+                             <AlertCircle className="w-4 h-4 mr-2" />
+                             Please select an action for all items before merging.
+                        </span>
+                    )}
+                </div>
                 <Button variant="outline" onClick={() => setSelectedRepo(null)}>
                     Cancel
                 </Button>
                 <Button
                     onClick={handleCreateMergeBranch}
-                    disabled={createMergeBranchMutation.isPending}
-                    className="bg-accent hover:bg-accent-dark text-accent-foreground min-w-[200px]"
+                    disabled={createMergeBranchMutation.isPending || !isAllDecided}
+                    className={`min-w-[200px] ${!isAllDecided ? 'opacity-50 cursor-not-allowed' : 'bg-accent hover:bg-accent-dark text-accent-foreground'}`}
                 >
                     {createMergeBranchMutation.isPending ? (
                         <>
@@ -495,6 +567,49 @@ export default function ComparisonPage() {
             </div>
           </div>
       </main>
+
+      <Dialog open={showMergeSuccessDialog} onOpenChange={setShowMergeSuccessDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white">
+            <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-500" />
+                    Merge Branch Created
+                </DialogTitle>
+                <DialogDescription className="text-slate-400">
+                    Successfully created merge branch <strong>{mergeResult?.branchName}</strong>.
+                    You can now create a pull request to review and merge these changes into {selectedRepo.mainBranch}.
+                </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+                <Button variant="outline" onClick={() => setShowMergeSuccessDialog(false)} className="text-slate-300 border-slate-600 hover:bg-slate-800">
+                    Close
+                </Button>
+                {mergeResult?.prUrl ? (
+                    <Button
+                        onClick={() => window.open(mergeResult.prUrl, '_blank')}
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                    >
+                        View Pull Request <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                ) : (
+                    <Button
+                        onClick={handleCreatePR}
+                        disabled={createPullRequestMutation.isPending}
+                        className="bg-accent hover:bg-accent-dark text-accent-foreground"
+                    >
+                        {createPullRequestMutation.isPending ? (
+                            <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Creating PR...
+                            </>
+                        ) : (
+                            'Create Pull Request'
+                        )}
+                    </Button>
+                )}
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
