@@ -361,19 +361,22 @@ export function extractWorkflowCalls(workflow: N8NWorkflow, workflowName: string
       let targetWorkflowName = node.parameters?.cachedResultName as string | undefined;
 
       // Sometimes it might be in 'source' or 'workflow'
-      if (typeof targetWorkflow === 'object') {
-          // It's an object, try to find a name or id inside, or stringify it safely
+      if (typeof targetWorkflow === 'object' && targetWorkflow !== null) {
+          // It's an object, try to find a name or id inside
           // Common patterns: { mode: 'id', value: '...' } or { __rl: true, value: '...', mode: 'id' }
           const paramObj = targetWorkflow as any;
-          const val = paramObj?.value;
+          const val = paramObj.value;
           
           // Try to extract cachedResultName from the object if not found at top level
-          if (!targetWorkflowName && paramObj?.cachedResultName) {
+          if (!targetWorkflowName && paramObj.cachedResultName) {
               targetWorkflowName = paramObj.cachedResultName;
           }
 
           if (val) {
              targetWorkflow = val;
+          } else if (paramObj.__rl && paramObj.value) {
+             // Explicit handling for n8n resource locator format
+             targetWorkflow = paramObj.value;
           } else {
              try {
                 targetWorkflow = JSON.stringify(targetWorkflow);
@@ -434,6 +437,7 @@ export function compareCredentials(
       mainOnly: !stagingCred && !!mainCred,
       stagingNodeAuthType: stagingCred?.nodeAuthType,
       mainNodeAuthType: mainCred?.nodeAuthType,
+      files: [], // Files will be populated by the aggregator
     };
   });
 }
@@ -459,6 +463,7 @@ export function compareDomains(stagingDomains: Domain[], mainDomains: Domain[]):
         staging: stagingInstances,
         main: mainInstances,
       },
+      files: [], // Files will be populated by the aggregator
     };
   });
 }
@@ -504,9 +509,9 @@ export function compareWorkflowCalls(
     stagingChains,
     mainChains,
     differences: {
-      added,
-      removed,
-      modified,
+      added: added.map(c => ({ ...c, files: [] })),
+      removed: removed.map(c => ({ ...c, files: [] })),
+      modified: modified.map(m => ({ ...m, files: [] })),
     },
   };
 }

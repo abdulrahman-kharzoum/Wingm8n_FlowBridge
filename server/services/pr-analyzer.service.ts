@@ -255,17 +255,25 @@ export class PRAnalyzerService {
              // This credential was replaced. We will handle it when processing Staging credentials
              // OR we can create a special key linking them.
              // Let's use the MAIN credential ID as the primary key if it exists
-             credentials.set(cred.id, {
-                ...cred,
-                id: cred.id, // Use Main ID as the base ID for the diff entry
-                mainId: cred.id,
-                stagingId: replacedByStagingId,
-                inMain: true,
-                inStaging: false, // Will be set to true when we process the replacement
-                filename: result.filename,
-                mainName: cred.name,
-                mainNodeAuthType: cred.nodeAuthType,
-             });
+             if (credentials.has(cred.id)) {
+                 // Already exists (from another file), just add the filename
+                 const existing = credentials.get(cred.id);
+                 if (!existing.files.includes(result.filename)) {
+                     existing.files.push(result.filename);
+                 }
+             } else {
+                 credentials.set(cred.id, {
+                    ...cred,
+                    id: cred.id, // Use Main ID as the base ID for the diff entry
+                    mainId: cred.id,
+                    stagingId: replacedByStagingId,
+                    inMain: true,
+                    inStaging: false, // Will be set to true when we process the replacement
+                    files: [result.filename],
+                    mainName: cred.name,
+                    mainNodeAuthType: cred.nodeAuthType,
+                 });
+             }
           } else {
              if (!credentials.has(cred.id)) {
                 credentials.set(cred.id, {
@@ -273,10 +281,16 @@ export class PRAnalyzerService {
                   mainType: cred.type,
                   inMain: true,
                   inStaging: false,
-                  filename: result.filename,
+                  files: [result.filename],
                   mainName: cred.name,
                   mainNodeAuthType: cred.nodeAuthType,
                 });
+             } else {
+                // Add filename if not already present
+                const existing = credentials.get(cred.id);
+                if (!existing.files.includes(result.filename)) {
+                    existing.files.push(result.filename);
+                }
              }
           }
         });
@@ -305,6 +319,9 @@ export class PRAnalyzerService {
                   existing.stagingType = cred.type;
                   existing.mainType = existing.type; // Current type is main type
                   existing.stagingNodeAuthType = cred.nodeAuthType;
+                  if (!existing.files.includes(result.filename)) {
+                      existing.files.push(result.filename);
+                  }
               }
           });
 
@@ -329,6 +346,9 @@ export class PRAnalyzerService {
               existing.stagingType = cred.type;
               existing.mainType = existing.type;
               existing.stagingNodeAuthType = cred.nodeAuthType;
+              if (!existing.files.includes(result.filename)) {
+                existing.files.push(result.filename);
+              }
             }
           } else {
             // It does NOT exist in Main
@@ -339,7 +359,7 @@ export class PRAnalyzerService {
                 ...cred,
                 inMain: false,
                 inStaging: true,
-                filename: result.filename,
+                files: [result.filename],
                 stagingName: cred.name,
                 stagingType: cred.type,
                 stagingNodeAuthType: cred.nodeAuthType,
@@ -360,8 +380,13 @@ export class PRAnalyzerService {
                 inMain: true,
                 inStaging: false,
                 mainUrl: domain.url, // Explicitly set mainUrl
-                filename: result.filename
+                files: [result.filename]
             });
+          } else {
+             const existing = domains.get(key);
+             if (!existing.files.includes(result.filename)) {
+                 existing.files.push(result.filename);
+             }
           }
         });
       }
@@ -374,13 +399,16 @@ export class PRAnalyzerService {
             const existing = domains.get(key);
             existing.inStaging = true;
             existing.stagingUrl = domain.url; // Explicitly set stagingUrl on existing
+            if (!existing.files.includes(result.filename)) {
+                existing.files.push(result.filename);
+            }
           } else {
             domains.set(key, {
                 ...domain,
                 inMain: false,
                 inStaging: true,
                 stagingUrl: domain.url, // Explicitly set stagingUrl
-                filename: result.filename
+                files: [result.filename]
             });
           }
         });
@@ -392,7 +420,12 @@ export class PRAnalyzerService {
         result.base.workflowCalls.calls.forEach((call: any) => {
           const key = `${call.sourceWorkflow}-${call.targetWorkflow}`;
           if (!workflowCalls.has(key)) {
-            workflowCalls.set(key, { ...call, inMain: true, inStaging: false, filename: result.filename });
+            workflowCalls.set(key, { ...call, inMain: true, inStaging: false, files: [result.filename] });
+          } else {
+              const existing = workflowCalls.get(key);
+              if (!existing.files.includes(result.filename)) {
+                  existing.files.push(result.filename);
+              }
           }
         });
       }
@@ -404,8 +437,11 @@ export class PRAnalyzerService {
           if (workflowCalls.has(key)) {
             const existing = workflowCalls.get(key);
             existing.inStaging = true;
+            if (!existing.files.includes(result.filename)) {
+                existing.files.push(result.filename);
+            }
           } else {
-            workflowCalls.set(key, { ...call, inMain: false, inStaging: true, filename: result.filename });
+            workflowCalls.set(key, { ...call, inMain: false, inStaging: true, files: [result.filename] });
           }
         });
       }

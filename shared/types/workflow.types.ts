@@ -28,6 +28,7 @@ export interface CredentialDiff {
   mainOnly: boolean;
   stagingNodeAuthType?: string;
   mainNodeAuthType?: string;
+  files: string[];
 }
 
 // Domain/URL types
@@ -44,6 +45,7 @@ export interface DomainDiff {
   stagingUrl?: string;
   mainUrl?: string;
   isDifferent: boolean;
+  files: string[];
   locations: {
     staging: Domain[];
     main: Domain[];
@@ -69,11 +71,12 @@ export interface WorkflowCallDiff {
   stagingChains: WorkflowCallChain[];
   mainChains: WorkflowCallChain[];
   differences: {
-    added: WorkflowCall[];
-    removed: WorkflowCall[];
+    added: (WorkflowCall & { files: string[] })[];
+    removed: (WorkflowCall & { files: string[] })[];
     modified: Array<{
       staging: WorkflowCall;
       main: WorkflowCall;
+      files: string[];
     }>;
   };
 }

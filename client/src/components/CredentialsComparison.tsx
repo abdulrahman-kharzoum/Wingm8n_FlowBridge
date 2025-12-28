@@ -10,12 +10,18 @@ import {
   AlertCircle,
   Copy,
   FileCode,
+  Files,
 } from 'lucide-react';
+import {
+    HoverCard,
+    HoverCardContent,
+    HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import type { CredentialDiff } from '@shared/types/workflow.types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface CredentialsComparisonProps {
-  credentials: (CredentialDiff & { filename?: string })[];
+  credentials: CredentialDiff[];
   onCredentialSelected?: (credentialId: string, source: 'staging' | 'main' | 'keep-both' | null) => void;
   mergeDecisions?: Record<string, 'staging' | 'main' | 'keep-both'>;
 }
@@ -138,10 +144,37 @@ export default function CredentialsComparison({
                                     </div>
                                 </div>
                             </div>
-                            {cred.filename && (
-                                <div className="flex items-center gap-1.5 text-xs text-slate-500 pl-11">
-                                    <FileCode className="w-3 h-3 flex-shrink-0" />
-                                    <span className="break-all">{cred.filename}</span>
+                             {/* Files Display */}
+                            {cred.files && cred.files.length > 0 && (
+                                <div className="pl-11">
+                                    {cred.files.length === 1 ? (
+                                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                            <FileCode className="w-3 h-3 flex-shrink-0" />
+                                            <span className="break-all">{cred.files[0]}</span>
+                                        </div>
+                                    ) : (
+                                        <HoverCard>
+                                            <HoverCardTrigger asChild>
+                                                <div className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer hover:text-slate-300 transition-colors w-fit">
+                                                    <Files className="w-3 h-3 flex-shrink-0" />
+                                                    <span>Found in {cred.files.length} workflows</span>
+                                                </div>
+                                            </HoverCardTrigger>
+                                            <HoverCardContent className="w-80 bg-slate-900 border-slate-700">
+                                                <div className="space-y-2">
+                                                    <div className="text-xs font-semibold text-slate-400 uppercase">Affected Workflows</div>
+                                                    <div className="text-xs text-slate-300 space-y-1 max-h-48 overflow-y-auto">
+                                                        {cred.files.map((file, idx) => (
+                                                            <div key={idx} className="flex items-start gap-2 break-all">
+                                                                <FileCode className="w-3 h-3 mt-0.5 flex-shrink-0 text-slate-500" />
+                                                                {file}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </HoverCardContent>
+                                        </HoverCard>
+                                    )}
                                 </div>
                             )}
                           </div>
@@ -184,11 +217,38 @@ export default function CredentialsComparison({
                                         )}
                                      </div>
                                 </div>
-                            </div>
-                             {cred.filename && (
-                                <div className="flex items-center gap-1.5 text-xs text-slate-500 pl-11">
-                                    <FileCode className="w-3 h-3 flex-shrink-0" />
-                                    <span className="break-all">{cred.filename}</span>
+                             </div>
+                             {/* Files Display */}
+                            {cred.files && cred.files.length > 0 && (
+                                <div className="pl-11">
+                                    {cred.files.length === 1 ? (
+                                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                            <FileCode className="w-3 h-3 flex-shrink-0" />
+                                            <span className="break-all">{cred.files[0]}</span>
+                                        </div>
+                                    ) : (
+                                        <HoverCard>
+                                            <HoverCardTrigger asChild>
+                                                <div className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer hover:text-slate-300 transition-colors w-fit">
+                                                    <Files className="w-3 h-3 flex-shrink-0" />
+                                                    <span>Found in {cred.files.length} workflows</span>
+                                                </div>
+                                            </HoverCardTrigger>
+                                            <HoverCardContent className="w-80 bg-slate-900 border-slate-700">
+                                                <div className="space-y-2">
+                                                    <div className="text-xs font-semibold text-slate-400 uppercase">Affected Workflows</div>
+                                                    <div className="text-xs text-slate-300 space-y-1 max-h-48 overflow-y-auto">
+                                                        {cred.files.map((file, idx) => (
+                                                            <div key={idx} className="flex items-start gap-2 break-all">
+                                                                <FileCode className="w-3 h-3 mt-0.5 flex-shrink-0 text-slate-500" />
+                                                                {file}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </HoverCardContent>
+                                        </HoverCard>
+                                    )}
                                 </div>
                             )}
                           </div>

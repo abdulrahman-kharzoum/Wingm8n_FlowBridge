@@ -11,12 +11,18 @@ import {
   Copy,
   ExternalLink,
   FileCode,
+  Files,
 } from 'lucide-react';
+import {
+    HoverCard,
+    HoverCardContent,
+    HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import type { DomainDiff } from '@shared/types/workflow.types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface DomainsComparisonProps {
-  domains: (DomainDiff & { filename?: string })[];
+  domains: DomainDiff[];
   onDomainSelected?: (url: string, selectedUrl: string | null) => void;
   mergeDecisions?: Record<string, { selected: 'staging' | 'main'; url: string }>;
 }
@@ -146,10 +152,37 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
                                     </div>
                                 </div>
                             </div>
-                            {domain.filename && (
-                                <div className="flex items-center gap-1.5 text-xs text-slate-500 pl-11">
-                                    <FileCode className="w-3 h-3 flex-shrink-0" />
-                                    <span className="break-all">{domain.filename}</span>
+                            {/* Files Display */}
+                            {domain.files && domain.files.length > 0 && (
+                                <div className="pl-11">
+                                    {domain.files.length === 1 ? (
+                                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                            <FileCode className="w-3 h-3 flex-shrink-0" />
+                                            <span className="break-all">{domain.files[0]}</span>
+                                        </div>
+                                    ) : (
+                                        <HoverCard>
+                                            <HoverCardTrigger asChild>
+                                                <div className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer hover:text-slate-300 transition-colors w-fit">
+                                                    <Files className="w-3 h-3 flex-shrink-0" />
+                                                    <span>Found in {domain.files.length} workflows</span>
+                                                </div>
+                                            </HoverCardTrigger>
+                                            <HoverCardContent className="w-80 bg-slate-900 border-slate-700">
+                                                <div className="space-y-2">
+                                                    <div className="text-xs font-semibold text-slate-400 uppercase">Affected Workflows</div>
+                                                    <div className="text-xs text-slate-300 space-y-1 max-h-48 overflow-y-auto">
+                                                        {domain.files.map((file, idx) => (
+                                                            <div key={idx} className="flex items-start gap-2 break-all">
+                                                                <FileCode className="w-3 h-3 mt-0.5 flex-shrink-0 text-slate-500" />
+                                                                {file}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </HoverCardContent>
+                                        </HoverCard>
+                                    )}
                                 </div>
                             )}
                           </div>
@@ -189,10 +222,37 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
                                     </div>
                                 </div>
                             </div>
-                            {domain.filename && (
-                                <div className="flex items-center gap-1.5 text-xs text-slate-500 pl-11">
-                                    <FileCode className="w-3 h-3 flex-shrink-0" />
-                                    <span className="break-all">{domain.filename}</span>
+                            {/* Files Display */}
+                            {domain.files && domain.files.length > 0 && (
+                                <div className="pl-11">
+                                    {domain.files.length === 1 ? (
+                                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                            <FileCode className="w-3 h-3 flex-shrink-0" />
+                                            <span className="break-all">{domain.files[0]}</span>
+                                        </div>
+                                    ) : (
+                                        <HoverCard>
+                                            <HoverCardTrigger asChild>
+                                                <div className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer hover:text-slate-300 transition-colors w-fit">
+                                                    <Files className="w-3 h-3 flex-shrink-0" />
+                                                    <span>Found in {domain.files.length} workflows</span>
+                                                </div>
+                                            </HoverCardTrigger>
+                                            <HoverCardContent className="w-80 bg-slate-900 border-slate-700">
+                                                <div className="space-y-2">
+                                                    <div className="text-xs font-semibold text-slate-400 uppercase">Affected Workflows</div>
+                                                    <div className="text-xs text-slate-300 space-y-1 max-h-48 overflow-y-auto">
+                                                        {domain.files.map((file, idx) => (
+                                                            <div key={idx} className="flex items-start gap-2 break-all">
+                                                                <FileCode className="w-3 h-3 mt-0.5 flex-shrink-0 text-slate-500" />
+                                                                {file}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </HoverCardContent>
+                                        </HoverCard>
+                                    )}
                                 </div>
                             )}
                           </div>
