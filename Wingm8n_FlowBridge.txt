@@ -15,7 +15,7 @@ This document outlines a comprehensive plan to build a GitHub-style UI for manag
 
 #### 1.1 Credential Management
 **Objective**: List all unique credential IDs from workflows across both branches
-
+ds
 - **Data Source**: N8N workflow JSON files contain `credentials` objects with IDs
 - **Key Requirements**:
   - Deduplicate credential IDs (show each unique ID once)
