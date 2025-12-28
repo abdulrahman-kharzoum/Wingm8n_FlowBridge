@@ -54,14 +54,13 @@ export default function CredentialsComparison({
   });
 
   const handleSelection = (credentialId: string, value: string) => {
-    setSelections((prev) => {
-      const newState = {
-        ...prev,
-        [credentialId]: value,
-      };
-      onCredentialSelected?.(credentialId, value);
-      return newState;
-    });
+    // Update local state
+    setSelections((prev) => ({
+      ...prev,
+      [credentialId]: value,
+    }));
+    // Propagate change
+    onCredentialSelected?.(credentialId, value);
   };
 
   const copyToClipboard = (text: string) => {
@@ -264,7 +263,7 @@ export default function CredentialsComparison({
                                 <div className="space-y-2">
                                      <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Select Credential</div>
                                      <Select
-                                        value={selections[cred.id]}
+                                        value={selections[cred.id] || ''}
                                         onValueChange={(value) => handleSelection(cred.id, value)}
                                      >
                                         <SelectTrigger className="w-full bg-slate-800 border-slate-600 text-slate-200">

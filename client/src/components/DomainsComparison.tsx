@@ -69,21 +69,27 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
   });
 
   const handleSelection = (url: string, selectedUrl: string, source: 'staging' | 'main' | 'custom' = 'staging') => {
-    setSelections((prev) => {
-       if (prev[url] === selectedUrl && source !== 'custom') {
-            const newState = { ...prev };
-            delete newState[url];
-            onDomainSelected?.(url, null);
-            return newState;
-        }
+    // Calculate new state first
+    const currentSelection = selections[url];
+    let newSelections: Record<string, string>;
 
-        const newState = {
-            ...prev,
+    if (currentSelection === selectedUrl && source !== 'custom') {
+        // Toggle off if clicking same selection (unless custom)
+        newSelections = { ...selections };
+        delete newSelections[url];
+        // Propagate unselection
+        onDomainSelected?.(url, null);
+    } else {
+        // Update selection
+        newSelections = {
+            ...selections,
             [url]: selectedUrl,
         };
+        // Propagate selection
         onDomainSelected?.(url, selectedUrl, source);
-        return newState;
-    });
+    }
+
+    setSelections(newSelections);
   };
 
   const handleCustomUrlChange = (url: string, value: string) => {

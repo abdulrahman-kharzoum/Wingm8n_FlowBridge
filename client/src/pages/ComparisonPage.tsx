@@ -214,6 +214,8 @@ export default function ComparisonPage() {
       }
   );
   
+  const analysis = prComparisonQuery.data?.analysis;
+  
   const [suggestions, setSuggestions] = useState<Record<string, { status: 'mapped' | 'missing'; targetId?: string; targetName?: string }>>({});
   const [isCreatingWorkflow, setIsCreatingWorkflow] = useState<string | null>(null);
 
@@ -242,7 +244,38 @@ export default function ComparisonPage() {
             stagingCalls: uniqueCalls 
         });
         setSuggestions(result);
-        toast.success("Graph suggestions generated");
+        
+        // Auto-populate merge decisions based on high-confidence suggestions
+        const decisionUpdates: Record<string, any> = {};
+        Object.entries(result).forEach(([stagingId, suggestion]) => {
+            if (suggestion.status === 'mapped' && suggestion.targetId) {
+                // Find the source workflow for this target (we need to reverse lookup or use the call info)
+                    // We need the source->target key. 
+                    // Let's iterate the original calls to match them to the suggestion key (which is target ID)
+                const relevantCalls = stagingCalls.filter(c => c.targetWorkflow === stagingId);
+                relevantCalls.forEach(call => {
+                    const key = `${call.sourceWorkflow}->${call.targetWorkflow}`;
+                    decisionUpdates[key] = {
+                        action: 'map',
+                        targetId: suggestion.targetId,
+                        targetName: suggestion.targetName
+                    };
+                });
+            }
+        });
+
+        if (Object.keys(decisionUpdates).length > 0) {
+            setMergeDecisions(prev => ({
+                ...prev,
+                workflowCalls: {
+                    ...prev.workflowCalls,
+                    ...decisionUpdates
+                }
+            }));
+             toast.success(`Graph suggestions generated and ${Object.keys(decisionUpdates).length} mappings applied`);
+        } else {
+             toast.success("Graph suggestions generated");
+        }
     } catch(e) {
         console.error(e);
         toast.error("Failed to generate suggestions");
@@ -324,6 +357,16 @@ export default function ComparisonPage() {
           }
           return { ...prev, metadata: newMetadata };
       });
+  };
+
+  const handleBulkMetadataSelected = (updates: Record<string, 'staging' | 'main'>) => {
+    setMergeDecisions((prev) => ({
+        ...prev,
+        metadata: {
+            ...prev.metadata,
+            ...updates
+        }
+    }));
   };
 
   const createMergeBranchMutation = trpc.merge.createMergeBranch.useMutation();
@@ -495,19 +538,26 @@ export default function ComparisonPage() {
       );
   }
 
-  const analysis = prComparisonQuery.data.analysis;
+
 
   // Validation Check: Are all items decided?
-  const totalCredentials = analysis.credentials.length;
+  const totalCredentials = analysis?.credentials.length || 0;
   const decidedCredentials = Object.keys(mergeDecisions.credentials).length;
   
-  const totalDomains = analysis.domains.length;
+  const totalDomains = analysis?.domains.length || 0;
   const decidedDomains = Object.keys(mergeDecisions.domains).length;
   
-  const totalCalls = analysis.workflowCalls.length;
+  // Only count calls that are present in Staging (New or Unchanged). 
+  // We must DEDUPLICATE by the decision key (source->target) because the UI groups multiple calls
+  // between the same workflows into a single decision.
+  const stagingCalls = analysis?.workflowCalls.filter((c: any) => c.inStaging) || [];
+  const uniqueStagingKeys = new Set(stagingCalls.map((c: any) => `${c.sourceWorkflow}->${c.targetWorkflow}`));
+  const totalCalls = uniqueStagingKeys.size;
+  
   const decidedCalls = Object.keys(mergeDecisions.workflowCalls).length;
 
-  const totalMetadata = analysis.metadata?.length || 0;
+  const totalMetadata = analysis?.metadata?.reduce((acc: number, file: any) => acc + (file.diffs?.length || 0), 0) || 0;
+  
   const decidedMetadata = Object.keys(mergeDecisions.metadata).length;
 
   const isAllDecided =
@@ -573,31 +623,31 @@ export default function ComparisonPage() {
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
                         <div className="text-xl font-bold text-accent">
-                        {analysis.credentials.length}
+                        {analysis?.credentials.length || 0}
                         </div>
                         <p className="text-xs text-slate-400">Total Credentials</p>
                     </div>
                     <div>
                         <div className="text-xl font-bold text-accent">
-                        {analysis.domains.length}
+                        {analysis?.domains.length || 0}
                         </div>
                         <p className="text-xs text-slate-400">Total Domains</p>
                     </div>
                     <div>
                         <div className="text-xl font-bold text-accent">
-                        {analysis.workflowCalls.length}
+                        {analysis?.workflowCalls.length || 0}
                         </div>
                         <p className="text-xs text-slate-400">Total Calls</p>
                     </div>
                     <div>
                         <div className="text-xl font-bold text-accent">
-                        {(analysis.nodeChanges?.length || 0)}
+                        {(analysis?.nodeChanges?.length || 0)}
                         </div>
                         <p className="text-xs text-slate-400">Node Changes</p>
                     </div>
                     <div>
                         <div className="text-xl font-bold text-red-400">
-                        {analysis.secrets.length}
+                        {analysis?.secrets.length || 0}
                         </div>
                         <p className="text-xs text-slate-400">Secrets Detected</p>
                     </div>
@@ -606,7 +656,7 @@ export default function ComparisonPage() {
                 </Card>
 
                 {/* Secrets Warning */}
-                {analysis.secrets.length > 0 && (
+                {analysis?.secrets && analysis.secrets.length > 0 && (
                     <Alert className="mt-4 bg-red-500/10 border-red-500/50 text-red-400">
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
@@ -650,7 +700,7 @@ export default function ComparisonPage() {
                   {/* Credentials Tab */}
                   <TabsContent value="credentials" className="mt-6">
                     <CredentialsComparison
-                      credentials={analysis.credentials}
+                      credentials={analysis?.credentials || []}
                       onCredentialSelected={handleCredentialSelected}
                       mergeDecisions={mergeDecisions.credentials}
                     />
@@ -659,7 +709,7 @@ export default function ComparisonPage() {
                   {/* Domains Tab */}
                   <TabsContent value="domains" className="mt-6">
                     <DomainsComparison
-                      domains={analysis.domains}
+                      domains={analysis?.domains || []}
                       onDomainSelected={handleDomainSelected}
                       mergeDecisions={mergeDecisions.domains}
                     />
@@ -668,7 +718,7 @@ export default function ComparisonPage() {
                   {/* Workflows Tab */}
                   <TabsContent value="workflows" className="mt-6">
                     <WorkflowCallsComparison
-                      workflowCalls={analysis.workflowCalls}
+                      workflowCalls={analysis?.workflowCalls || []}
                       onCallSelected={handleWorkflowCallSelected}
                       onBulkCallSelected={handleBulkWorkflowCallSelected}
                       mergeDecisions={mergeDecisions.workflowCalls}
@@ -683,14 +733,15 @@ export default function ComparisonPage() {
                    
                   {/* Node Changes Tab */}
                   <TabsContent value="nodes" className="mt-6">
-                    <NodeChangesComparison nodeChanges={analysis.nodeChanges || []} />
+                    <NodeChangesComparison nodeChanges={analysis?.nodeChanges || []} />
                   </TabsContent>
 
                   {/* Metadata Tab */}
                   <TabsContent value="metadata" className="mt-6">
                     <MetadataComparison
-                        metadata={analysis.metadata || []}
+                        metadata={analysis?.metadata || []}
                         onMetadataSelected={handleMetadataSelected}
+                        onBulkMetadataSelected={handleBulkMetadataSelected}
                         mergeDecisions={mergeDecisions.metadata}
                     />
                   </TabsContent>

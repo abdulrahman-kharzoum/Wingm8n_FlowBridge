@@ -288,7 +288,11 @@ export default function WorkflowCallsComparison({
                                 Map staging calls to production workflows.
                             </p>
                              
-                             {Object.entries(relationships).map(([source, calls]) => (
+                             {Object.entries(relationships).map(([source, calls]) => {
+                                 const targets = Array.from(new Set(calls.filter((c: any) => c.inStaging).map(c => c.targetWorkflow)));
+                                 if (targets.length === 0) return null;
+
+                                 return (
                                 <div key={`result-${source}`} className="p-3 rounded-lg border border-slate-700 bg-slate-800/80">
                                     <div className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                                         <Workflow className="w-4 h-4 text-accent" />
@@ -315,16 +319,19 @@ export default function WorkflowCallsComparison({
                                                 // If no decision yet, check if we have a suggestion
                                                 const suggestion = suggestions?.[target];
                                                 if (suggestion?.status === 'mapped' && suggestion.targetId) {
-                                                     currentMappingId = suggestion.targetId;
+                                                     currentMappingId = suggestion.targetId || target;
                                                      // If not already in decision, we might want to trigger update? 
                                                      // But render-time derivation is safer for display.
-                                                }
+                                                 }
                                             }
                                             
                                             const suggestion = suggestions?.[target];
                                             const isMissing = suggestion?.status === 'missing';
                                             const inMain = calls.some((c: any) => c.targetWorkflow === target && c.inMain);
                                             const inStaging = calls.some((c: any) => c.targetWorkflow === target && c.inStaging);
+
+                                            // Ensure controlled component by never passing undefined
+                                            const selectValue = currentMappingId || '';
 
                                             return (
                                                 <div
@@ -351,7 +358,7 @@ export default function WorkflowCallsComparison({
                                                         <LinkIcon className={`w-3 h-3 flex-shrink-0 ${isMissing ? 'text-red-400' : 'text-slate-400'}`} />
                                                         <div className="flex-1">
                                                             <Select 
-                                                                value={currentMappingId} 
+                                                                value={selectValue} 
                                                                 onValueChange={(val) => handleManualMappingChange(callObj, val)}
                                                             >
                                                                 <SelectTrigger className="h-8 text-xs bg-slate-900 border-slate-700 w-full">
@@ -406,7 +413,8 @@ export default function WorkflowCallsComparison({
                                         })}
                                     </div>
                                 </div>
-                             ))}
+                                );
+                             })}
                         </div>
                       </div>
                 </div>

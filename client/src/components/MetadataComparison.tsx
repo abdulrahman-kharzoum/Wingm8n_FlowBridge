@@ -6,13 +6,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useState, useEffect } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 
+import { Button } from '@/components/ui/button'; // Ensure Button is imported
+
 interface MetadataComparisonProps {
   metadata: { filename: string; diffs: MetadataDiff[] }[];
   onMetadataSelected?: (filename: string, key: string, source: 'staging' | 'main' | null) => void;
+  onBulkMetadataSelected?: (updates: Record<string, 'staging' | 'main'>) => void;
   mergeDecisions?: Record<string, 'staging' | 'main'>;
 }
 
-export default function MetadataComparison({ metadata, onMetadataSelected, mergeDecisions = {} }: MetadataComparisonProps) {
+export default function MetadataComparison({ metadata, onMetadataSelected, onBulkMetadataSelected, mergeDecisions = {} }: MetadataComparisonProps) {
   const [selections, setSelections] = useState<Record<string, 'staging' | 'main'>>({});
 
   // Initialize selections from parent mergeDecisions
@@ -40,6 +43,18 @@ export default function MetadataComparison({ metadata, onMetadataSelected, merge
     });
   };
 
+  const selectAllMain = () => {
+      const updates: Record<string, 'main'> = {};
+      metadata.forEach(fileMeta => {
+          fileMeta.diffs.forEach(diff => {
+              const uniqueKey = `${fileMeta.filename}-${diff.key}`;
+              updates[uniqueKey] = 'main';
+          });
+      });
+      
+      onBulkMetadataSelected?.(updates);
+  };
+
   if (metadata.length === 0) return null;
 
   return (
@@ -56,6 +71,16 @@ export default function MetadataComparison({ metadata, onMetadataSelected, merge
                 Changes to workflow identity, versioning, and settings
               </CardDescription>
             </div>
+            {onBulkMetadataSelected && (
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={selectAllMain}
+                    className="border-slate-600 hover:bg-slate-700 text-slate-200"
+                >
+                    Select All Main
+                </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
