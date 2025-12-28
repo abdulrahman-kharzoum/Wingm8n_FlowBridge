@@ -155,7 +155,7 @@ export interface MergeDecision {
     };
   };
   workflowCalls: {
-    [workflowName: string]: 'add' | 'remove' | 'keep';
+    [workflowName: string]: 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string };
   };
   metadata: {
     [key: string]: 'staging' | 'main';

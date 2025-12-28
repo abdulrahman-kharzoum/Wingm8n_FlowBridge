@@ -219,6 +219,27 @@ export class GitHubService {
   }
 
   /**
+   * Get a specific pull request
+   */
+  async getPullRequest(
+    owner: string,
+    repo: string,
+    pullNumber: number
+  ): Promise<any> {
+    try {
+      const response = await this.octokit.rest.pulls.get({
+        owner,
+        repo,
+        pull_number: pullNumber,
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`[GitHub] Failed to fetch PR #${pullNumber}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Create a pull request
    */
   async createPullRequest(

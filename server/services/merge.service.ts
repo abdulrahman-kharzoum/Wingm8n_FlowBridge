@@ -662,7 +662,7 @@ export class MergeService {
     merged: N8NWorkflow,
     stagingWorkflow: N8NWorkflow,
     mainWorkflow: N8NWorkflow,
-    workflowCallDecisions: Record<string, 'add' | 'remove' | 'keep'>
+    workflowCallDecisions: Record<string, 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string }>
   ): void {
     console.log('[Merge] Applying workflow call decisions:', workflowCallDecisions);
     console.log(`[Merge] Workflow call decisions keys:`, Object.keys(workflowCallDecisions));
@@ -675,7 +675,7 @@ export class MergeService {
 
     // Process each workflow call decision
     Object.entries(workflowCallDecisions).forEach(([callKey, action]) => {
-      console.log(`[Merge] Processing workflow call decision: ${callKey} -> ${action}`);
+      console.log(`[Merge] Processing workflow call decision: ${callKey} -> ${typeof action === 'object' ? JSON.stringify(action) : action}`);
       
       // callKey format: "sourceWorkflow->targetWorkflow"
       const parts = callKey.split('->');
@@ -708,6 +708,13 @@ export class MergeService {
               changesApplied++;
             } else if (action === 'keep') {
               console.log(`[Merge] Keeping current state for workflow call from ${sourceWorkflow} to ${targetWorkflow}`);
+            } else if (typeof action === 'object' && action.action === 'map') {
+               // Handle Mapping
+               console.log(`[Merge] Remapping workflow call for ${node.name} from ${targetWorkflow} to ${action.targetId} (${action.targetName})`);
+               if (node.parameters) {
+                   node.parameters.workflowId = action.targetId;
+                   changesApplied++;
+               }
             }
           }
         }

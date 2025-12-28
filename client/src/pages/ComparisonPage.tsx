@@ -200,24 +200,116 @@ export default function ComparisonPage() {
     });
   };
 
-  const handleWorkflowCallSelected = (call: any, action: 'add' | 'remove' | 'keep') => {
-      setMergeDecisions((prev) => ({
-          ...prev,
-          workflowCalls: {
-              ...prev.workflowCalls,
-              [`${call.sourceWorkflow}->${call.targetWorkflow}`]: action
-          }
-      }));
+  const n8nUtils = trpc.useContext().n8n;
+  const generateSuggestionMutation = trpc.n8n.generateGraphSuggestion.useMutation();
+  const createWorkflowMutation = trpc.n8n.createWorkflowFromMapping.useMutation();
+  const workflowsQuery = trpc.n8n.getWorkflows.useQuery(
+      { owner: selectedRepo?.owner || '', repo: selectedRepo?.repo || '' }, 
+      {
+          enabled: !!selectedRepo,
+          // Disable aggressive refetching
+          refetchOnWindowFocus: false,
+          staleTime: 5 * 60 * 1000, // 5 minutes
+          retry: false
+      }
+  );
+  
+  const [suggestions, setSuggestions] = useState<Record<string, { status: 'mapped' | 'missing'; targetId?: string; targetName?: string }>>({});
+  const [isCreatingWorkflow, setIsCreatingWorkflow] = useState<string | null>(null);
+
+  const handleGenerateSuggestions = async () => {
+    if (!analysis?.workflowCalls) return;
+    try {
+        const stagingCalls = analysis.workflowCalls
+             .filter(c => !c.inMain) 
+             .map(c => ({
+                 sourceWorkflow: c.sourceWorkflow,
+                 targetWorkflow: c.targetWorkflow,
+                 targetWorkflowName: c.targetWorkflowName
+             }));
+        
+        // Ensure unique
+        const uniqueCalls = Array.from(new Set(stagingCalls.map(c => JSON.stringify(c)))).map(s => JSON.parse(s));
+
+        if (!selectedRepo) {
+            toast.error("Repository not selected");
+            return;
+        }
+
+        const result = await generateSuggestionMutation.mutateAsync({ 
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            stagingCalls: uniqueCalls 
+        });
+        setSuggestions(result);
+        toast.success("Graph suggestions generated");
+    } catch(e) {
+        console.error(e);
+        toast.error("Failed to generate suggestions");
+    }
   };
 
-  const handleBulkWorkflowCallSelected = (updates: Record<string, 'add' | 'remove' | 'keep'>) => {
-      setMergeDecisions((prev) => ({
-          ...prev,
-          workflowCalls: {
-              ...prev.workflowCalls,
-              ...updates
-          }
-      }));
+  const handleCreateWorkflow = async (call: any) => {
+      if (!selectedRepo || !prNumber) return;
+      if (!call.targetWorkflowName) {
+          toast.error("Cannot create workflow: Missing name");
+          return;
+      }
+      
+      setIsCreatingWorkflow(call.targetWorkflow);
+      try {
+          const result = await createWorkflowMutation.mutateAsync({
+              owner: selectedRepo.owner,
+              repo: selectedRepo.repo,
+              prNumber: parseInt(prNumber),
+              targetName: call.targetWorkflowName
+          });
+          
+          toast.success(`Created workflow: ${result.name}`);
+          
+          // Update suggestion to mapped
+          setSuggestions(prev => ({
+              ...prev,
+              [call.targetWorkflow]: {
+                  status: 'mapped',
+                  targetId: result.id,
+                  targetName: result.name
+              }
+          }));
+          
+          // Automatically select map action
+          handleWorkflowCallSelected(call, { 
+              action: 'map', 
+              targetId: result.id, 
+              targetName: result.name 
+          });
+
+      } catch (e: any) {
+          console.error(e);
+          toast.error(`Failed to create workflow: ${e.message}`);
+      } finally {
+          setIsCreatingWorkflow(null);
+      }
+  };
+
+  const handleWorkflowCallSelected = (call: any, action: 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string }) => {
+       setMergeDecisions((prev) => ({
+           ...prev,
+           workflowCalls: {
+               ...prev.workflowCalls,
+               [`${call.sourceWorkflow}->${call.targetWorkflow}`]: action
+           }
+       }));
+  };
+
+  const handleBulkWorkflowCallSelected = (updates: Record<string, 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string }>) => {
+       setMergeDecisions((prev) => ({
+           ...prev,
+           workflowCalls: {
+               ...prev.workflowCalls,
+               ...updates
+           }
+       }));
   };
 
   const handleMetadataSelected = (filename: string, key: string, source: 'staging' | 'main' | null) => {
@@ -579,6 +671,12 @@ export default function ComparisonPage() {
                       onCallSelected={handleWorkflowCallSelected}
                       onBulkCallSelected={handleBulkWorkflowCallSelected}
                       mergeDecisions={mergeDecisions.workflowCalls}
+                      onGenerateSuggestions={handleGenerateSuggestions}
+                      isGeneratingSuggestions={generateSuggestionMutation.isPending}
+                      suggestions={suggestions}
+                      onCreateWorkflow={handleCreateWorkflow}
+                      isCreatingWorkflow={isCreatingWorkflow}
+                      availableWorkflows={workflowsQuery.data || []}
                     />
                   </TabsContent>
                    
