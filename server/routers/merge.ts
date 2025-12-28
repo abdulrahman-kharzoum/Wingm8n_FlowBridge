@@ -21,15 +21,25 @@ export const mergeRouter = router({
         stagingBranch: z.string(),
         mainBranch: z.string(),
         decisions: z.object({
-          credentials: z.record(z.string(), z.enum(['staging', 'main', 'keep-both'])),
+          credentials: z.record(z.string(), z.string()),
           domains: z.record(
             z.string(),
             z.object({
-              selected: z.enum(['staging', 'main']),
+              selected: z.enum(['staging', 'main', 'custom']),
               url: z.string(),
             })
           ),
-          workflowCalls: z.record(z.string(), z.enum(['add', 'remove', 'keep'])),
+          workflowCalls: z.record(
+            z.string(),
+            z.union([
+              z.enum(['add', 'remove', 'keep']),
+              z.object({
+                action: z.literal('map'),
+                targetId: z.string(),
+                targetName: z.string().optional(),
+              }),
+            ])
+          ),
           metadata: z.record(z.string(), z.enum(['staging', 'main'])),
         }),
       })
