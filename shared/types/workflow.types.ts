@@ -150,7 +150,7 @@ export interface MergeDecision {
   };
   domains: {
     [url: string]: {
-      selected: 'staging' | 'main';
+      selected: 'staging' | 'main' | 'custom';
       url: string;
     };
   };

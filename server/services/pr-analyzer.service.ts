@@ -215,22 +215,11 @@ export class PRAnalyzerService {
 
     // Helper to normalize webhook keys for comparison
     const getDomainKey = (domain: any) => {
-        const match = domain.url.match(/^([A-Z]+)\s+(.+)\s+\(Webhook\)$/);
-        if (match) {
-            // Use nodeId as key for webhooks to correctly group them even if path changes
-            if (domain.nodeId) {
-                return `webhook:${domain.nodeId}`;
-            }
-            // Fallback to path if nodeId is somehow missing (legacy support)
-            return `webhook:${match[2]}`;
-        }
-
-        // For standard URLs, use Node ID + Parameter Path to correlate changes
-        // This ensures that if a URL changes in the same field, it appears as a modification
+        // We use nodeId:parameterPath as a primary key for "same entity",
+        // but we'll handle the URL value matching in the aggregation logic
         if (domain.nodeId && domain.parameterPath) {
-            return `${domain.nodeId}:${domain.parameterPath}`;
+             return `${domain.nodeId}:${domain.parameterPath}`;
         }
-
         return domain.url;
     };
 
@@ -481,19 +470,61 @@ export class PRAnalyzerService {
             const existing = domains.get(key);
             existing.inStaging = true;
             existing.stagingUrl = domain.url; // Explicitly set stagingUrl on existing
-            // Important: We should also update the file list if it's found here
-            // The previous logic already did this, but let's be explicit and verify
             if (!existing.files.includes(result.filename)) {
                 existing.files.push(result.filename);
             }
           } else {
-            domains.set(key, {
-                ...domain,
-                inMain: false,
-                inStaging: true,
-                stagingUrl: domain.url, // Explicitly set stagingUrl
-                files: [result.filename]
-            });
+             // Heuristic: If it's a "New" domain, check if there's an "Orphaned" Main domain
+             // (in Main but not Staging) from the SAME FILE that we can link to.
+             
+             let foundMatch = false;
+             
+             // If we rely on URL as fallback key, and URL changed, we get a new Key.
+             // We want to find if there is an existing Main domain that:
+             // 1. Is in the same file
+             // 2. Is currently marked as "Removed" (inMain=true, inStaging=false)
+             // 3. Has a matching Node ID (if available) OR is the "only" other URL change in that file (riskier)
+             
+             // NOTE: 'domains' is a Map. We can iterate it.
+             for (const [existingKey, existing] of Array.from(domains.entries())) {
+                 if (existing.inMain && !existing.inStaging && existing.files.includes(result.filename)) {
+                     // Check for Node ID match if available in both
+                     if (domain.nodeId && existing.nodeId && domain.nodeId === existing.nodeId) {
+                         // Strong match! Same Node ID, different URL (implied by different Key)
+                         // We merge this new Staging domain into the existing Main domain entry
+                         
+                         existing.inStaging = true;
+                         existing.stagingUrl = domain.url;
+                         // We keep the Key as the Main one (usually) or we might need to re-key?
+                         // If we keep the old Key, we just updated the value.
+                         
+                         foundMatch = true;
+                         break;
+                     }
+                     
+                     // Weak match: If neither has Node ID (or one missing), and we want to assume
+                     // "Change" if it's in the same file?
+                     // Let's be conservative: Only match if we are fairly sure.
+                     // If Parameter Path matches?
+                     if (domain.parameterPath && existing.parameterPath && domain.parameterPath === existing.parameterPath) {
+                          // Likely same field
+                          existing.inStaging = true;
+                          existing.stagingUrl = domain.url;
+                          foundMatch = true;
+                          break;
+                     }
+                 }
+             }
+             
+             if (!foundMatch) {
+                domains.set(key, {
+                    ...domain,
+                    inMain: false,
+                    inStaging: true,
+                    stagingUrl: domain.url, // Explicitly set stagingUrl
+                    files: [result.filename]
+                });
+             }
           }
         });
       }

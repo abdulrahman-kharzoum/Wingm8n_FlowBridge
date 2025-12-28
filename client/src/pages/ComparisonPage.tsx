@@ -83,10 +83,24 @@ export default function ComparisonPage() {
       const analysis = prComparisonQuery.data?.analysis;
       if (!analysis) return;
 
-      setMergeDecisions(prev => {
-          // ... auto-select logic ...
-          return prev;
-      });
+      // Auto-select Main for Metadata by default
+      const metadataDecisions: Record<string, 'staging' | 'main'> = {};
+      if (analysis.metadata) {
+          analysis.metadata.forEach((file: any) => {
+              file.diffs.forEach((diff: any) => {
+                  const uniqueKey = `${file.filename}-${diff.key}`;
+                  metadataDecisions[uniqueKey] = 'main';
+              });
+          });
+      }
+
+      setMergeDecisions(prev => ({
+          ...prev,
+          metadata: {
+              ...prev.metadata,
+              ...metadataDecisions
+          }
+      }));
   }, [prComparisonQuery.data?.analysis]);
   */
 
@@ -139,7 +153,7 @@ export default function ComparisonPage() {
     setSelectedRepo({ owner, repo, stagingBranch, mainBranch });
   };
 
-  const handleCredentialSelected = (credentialId: string, source: 'staging' | 'main' | 'keep-both' | null) => {
+  const handleCredentialSelected = (credentialId: string, source: string | null) => {
     setMergeDecisions((prev) => {
       const newCredentials = { ...prev.credentials };
       if (source === null) {
@@ -154,7 +168,7 @@ export default function ComparisonPage() {
     });
   };
 
-  const handleDomainSelected = (url: string, selectedUrl: string | null, source?: 'staging' | 'main') => {
+  const handleDomainSelected = (url: string, selectedUrl: string | null, source?: 'staging' | 'main' | 'custom') => {
     setMergeDecisions((prev) => {
         const newDomains = { ...prev.domains };
         if (selectedUrl === null) {
@@ -164,9 +178,9 @@ export default function ComparisonPage() {
             // The DomainsComparison passes either mainUrl or stagingUrl
             // We need to check which one it matches in the analysis
             const domainDiff = prComparisonQuery.data?.analysis.domains.find(d => d.url === url);
-            let determinedSource: 'staging' | 'main' = source || 'staging';
+            let determinedSource: 'staging' | 'main' | 'custom' = source || 'staging';
             
-            if (domainDiff) {
+            if (domainDiff && determinedSource !== 'custom') {
                 if (selectedUrl === domainDiff.mainUrl) {
                     determinedSource = 'main';
                 } else if (selectedUrl === domainDiff.stagingUrl) {

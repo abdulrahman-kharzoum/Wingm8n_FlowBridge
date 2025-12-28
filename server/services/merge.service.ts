@@ -470,7 +470,7 @@ export class MergeService {
     merged: N8NWorkflow,
     stagingWorkflow: N8NWorkflow,
     mainWorkflow: N8NWorkflow,
-    domainDecisions: Record<string, { selected: 'staging' | 'main'; url: string }>
+    domainDecisions: Record<string, { selected: 'staging' | 'main' | 'custom'; url: string }>
   ): void {
     console.log('[Merge] Applying domain decisions:', domainDecisions);
     
@@ -572,7 +572,7 @@ export class MergeService {
                // Fallback: Use the previous logic of scanning all nodes for URL-like fields.
                // But now we check if the value matches the *decisionKey* (if it's a URL) OR if we can infer.
                
-               if (decision.selected === 'main') {
+               if (decision.selected === 'main' || decision.selected === 'custom') {
                    // We want to force this URL.
                    // Iterate all nodes, find properties that look like URLs.
                    // If they match the *Staging* version of this decision?

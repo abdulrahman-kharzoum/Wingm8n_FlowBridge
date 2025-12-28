@@ -23,23 +23,30 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 interface DomainsComparisonProps {
   domains: DomainDiff[];
-  onDomainSelected?: (url: string, selectedUrl: string | null) => void;
-  mergeDecisions?: Record<string, { selected: 'staging' | 'main'; url: string }>;
+  onDomainSelected?: (url: string, selectedUrl: string | null, source?: 'staging' | 'main' | 'custom') => void;
+  mergeDecisions?: Record<string, { selected: 'staging' | 'main' | 'custom'; url: string }>;
 }
 
 export default function DomainsComparison({ domains, onDomainSelected, mergeDecisions = {} }: DomainsComparisonProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selections, setSelections] = useState<Record<string, string>>({});
+  const [customUrls, setCustomUrls] = useState<Record<string, string>>({});
 
   // Initialize selections from parent mergeDecisions
   useEffect(() => {
-    const initial: Record<string, string> = {};
+    const initialSelections: Record<string, string> = {};
+    const initialCustomUrls: Record<string, string> = {};
+    
     Object.entries(mergeDecisions).forEach(([url, decision]) => {
       if (decision && decision.url) {
-        initial[url] = decision.url;
+        initialSelections[url] = decision.url;
+        if (decision.selected === 'custom') {
+            initialCustomUrls[url] = decision.url;
+        }
       }
     });
-    setSelections(initial);
+    setSelections(initialSelections);
+    setCustomUrls(initialCustomUrls);
   }, [mergeDecisions]);
 
   // Filter out non-http/https URLs and apply search
@@ -61,9 +68,9 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
     );
   });
 
-  const handleSelection = (url: string, selectedUrl: string) => {
+  const handleSelection = (url: string, selectedUrl: string, source: 'staging' | 'main' | 'custom' = 'staging') => {
     setSelections((prev) => {
-       if (prev[url] === selectedUrl) {
+       if (prev[url] === selectedUrl && source !== 'custom') {
             const newState = { ...prev };
             delete newState[url];
             onDomainSelected?.(url, null);
@@ -74,9 +81,20 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
             ...prev,
             [url]: selectedUrl,
         };
-        onDomainSelected?.(url, selectedUrl);
+        onDomainSelected?.(url, selectedUrl, source);
         return newState;
     });
+  };
+
+  const handleCustomUrlChange = (url: string, value: string) => {
+      setCustomUrls(prev => ({ ...prev, [url]: value }));
+      if (selections[url] && selections[url] !== value) {
+         // If currently selected as custom, update selection live
+          const isCustomSelected = mergeDecisions[url]?.selected === 'custom' || (!mergeDecisions[url] && value);
+           if (isCustomSelected) {
+               handleSelection(url, value, 'custom');
+           }
+      }
   };
 
   const copyToClipboard = (text: string) => {
@@ -222,6 +240,14 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
                                     </div>
                                 </div>
                             </div>
+                            
+                            {/* Visual connector for changes */}
+                            {domain.mainUrl && domain.mainUrl !== domain.stagingUrl && (
+                                <div className="hidden">
+                                    {/* This is just a placeholder for logic, but we can visualize the connection or diff here if needed */}
+                                </div>
+                            )}
+
                             {/* Files Display */}
                             {domain.files && domain.files.length > 0 && (
                                 <div className="pl-11 mt-1">
@@ -270,11 +296,11 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
                                 <div className="space-y-2">
                                     <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Source Selection</div>
                                     {domain.mainUrl && (
-                                        <div className={`flex items-center space-x-2 p-2 rounded border ${selections[domain.url] === domain.mainUrl ? 'bg-blue-500/10 border-blue-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
+                                        <div className={`flex items-center space-x-2 p-2 rounded border ${selections[domain.url] === domain.mainUrl && mergeDecisions[domain.url]?.selected !== 'custom' ? 'bg-blue-500/10 border-blue-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
                                             <Checkbox
                                                 id={`main-${domain.url}`}
-                                                checked={selections[domain.url] === domain.mainUrl}
-                                                onCheckedChange={() => handleSelection(domain.url, domain.mainUrl!)}
+                                                checked={selections[domain.url] === domain.mainUrl && mergeDecisions[domain.url]?.selected !== 'custom'}
+                                                onCheckedChange={() => handleSelection(domain.url, domain.mainUrl!, 'main')}
                                                 className="data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
                                             />
                                             <label
@@ -287,11 +313,11 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
                                     )}
                                      
                                     {domain.stagingUrl && (
-                                        <div className={`flex items-center space-x-2 p-2 rounded border ${selections[domain.url] === domain.stagingUrl ? 'bg-amber-500/10 border-amber-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
+                                        <div className={`flex items-center space-x-2 p-2 rounded border ${selections[domain.url] === domain.stagingUrl && mergeDecisions[domain.url]?.selected !== 'custom' ? 'bg-amber-500/10 border-amber-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
                                             <Checkbox
                                                 id={`staging-${domain.url}`}
-                                                checked={selections[domain.url] === domain.stagingUrl}
-                                                onCheckedChange={() => handleSelection(domain.url, domain.stagingUrl!)}
+                                                checked={selections[domain.url] === domain.stagingUrl && mergeDecisions[domain.url]?.selected !== 'custom'}
+                                                onCheckedChange={() => handleSelection(domain.url, domain.stagingUrl!, 'staging')}
                                                 className="data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
                                             />
                                             <label
@@ -304,6 +330,44 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
                                             </label>
                                         </div>
                                     )}
+
+                                    {/* Custom / Manual Edit */}
+                                    <div className={`space-y-2 p-2 rounded border ${mergeDecisions[domain.url]?.selected === 'custom' ? 'bg-purple-500/10 border-purple-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id={`custom-${domain.url}`}
+                                                checked={mergeDecisions[domain.url]?.selected === 'custom'}
+                                                onCheckedChange={(checked) => {
+                                                    if (checked) {
+                                                        const val = customUrls[domain.url] || domain.stagingUrl || domain.mainUrl || '';
+                                                        handleSelection(domain.url, val, 'custom');
+                                                        // Ensure custom url state is initialized if empty
+                                                        if (!customUrls[domain.url]) {
+                                                            setCustomUrls(prev => ({ ...prev, [domain.url]: val }));
+                                                        }
+                                                    } else {
+                                                        handleSelection(domain.url, domain.stagingUrl || domain.mainUrl!, 'staging');
+                                                    }
+                                                }}
+                                                className="data-[state=checked]:bg-purple-500 data-[state=checked]:border-purple-500"
+                                            />
+                                            <label
+                                                htmlFor={`custom-${domain.url}`}
+                                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer text-slate-200"
+                                            >
+                                                Manual Edit
+                                            </label>
+                                        </div>
+                                        
+                                        {mergeDecisions[domain.url]?.selected === 'custom' && (
+                                            <Input
+                                                value={customUrls[domain.url] || ''}
+                                                onChange={(e) => handleCustomUrlChange(domain.url, e.target.value)}
+                                                className="h-8 text-xs font-mono bg-slate-950/50 border-slate-700 focus-visible:ring-purple-500/50"
+                                                placeholder="Enter custom URL or webhook path..."
+                                            />
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Result Display */}
