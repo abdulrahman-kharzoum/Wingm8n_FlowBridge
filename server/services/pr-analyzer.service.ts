@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { extractCredentials, extractDomains, extractWorkflowCalls, detectHardcodedSecrets, extractMetadata, compareMetadata, compareNodes, getCredentialReplacements } from '@shared/utils/workflow-parser';
-import { createGitHubService } from './github.service';
+import { createGitHubService, fetchBranchWorkflows } from './github.service';
+import type { Credential } from '@shared/types/workflow.types';
 
 export interface WorkflowFileAnalysis {
   filename: string;
@@ -43,8 +44,10 @@ export interface PRAnalysisResult {
 
 export class PRAnalyzerService {
   private octokit: Octokit;
+  private accessToken: string;
 
   constructor(accessToken: string) {
+    this.accessToken = accessToken;
     this.octokit = new Octokit({
       auth: accessToken,
       request: {
@@ -74,12 +77,38 @@ export class PRAnalyzerService {
 
       // 3. Filter for N8N workflow JSON files
       const workflowFiles = files.filter(
-        file => file.filename.endsWith('.json') && 
-                (file.filename.includes('workflow') || 
+        file => file.filename.endsWith('.json') &&
+                (file.filename.includes('workflow') ||
                  file.filename.includes('.n8n') ||
-                 file.status === 'added' || 
+                 file.status === 'added' ||
                  file.status === 'modified')
       );
+
+      // 3.5 Fetch all main branch workflows to build credential registry
+      const allMainCredentials = new Map<string, Credential[]>(); // Type -> Credential[]
+      try {
+          const ghService = createGitHubService(this.accessToken);
+          // Fetch all workflows from base branch (recursively)
+          const mainWorkflows = await fetchBranchWorkflows(ghService, owner, repo, pr.base.ref);
+          
+          mainWorkflows.workflows.forEach(w => {
+              const creds = extractCredentials(w.content);
+              creds.forEach(c => {
+                  if (!allMainCredentials.has(c.type)) {
+                      allMainCredentials.set(c.type, []);
+                  }
+                  // Avoid duplicates by ID
+                  const existingList = allMainCredentials.get(c.type)!;
+                  if (!existingList.some(ex => ex.id === c.id)) {
+                      existingList.push(c);
+                  }
+              });
+          });
+          console.log(`[PR Analyzer] Registry built with ${allMainCredentials.size} credential types from Main branch.`);
+      } catch (e) {
+          console.error('[PR Analyzer] Failed to fetch main branch workflows for credential registry:', e);
+          // Proceed without registry (alternatives will be empty)
+      }
 
       // 4. Fetch content of each changed workflow
       const analysisResults = await Promise.all(
@@ -159,7 +188,7 @@ export class PRAnalyzerService {
 
       // 6. Aggregate and deduplicate results
       const validResults = analysisResults.filter((r): r is any => r !== null) as WorkflowFileAnalysis[];
-      const aggregated = this.aggregateAnalysis(validResults);
+      const aggregated = this.aggregateAnalysis(validResults, allMainCredentials);
 
       return {
         pr: {
@@ -179,7 +208,7 @@ export class PRAnalyzerService {
     }
   }
 
-  private aggregateAnalysis(results: WorkflowFileAnalysis[]) {
+  private aggregateAnalysis(results: WorkflowFileAnalysis[], credentialRegistry: Map<string, Credential[]> = new Map()) {
     const credentials = new Map();
     const domains = new Map();
     const workflowCalls = new Map();
@@ -352,18 +381,71 @@ export class PRAnalyzerService {
             }
           } else {
             // It does NOT exist in Main
-            // Only add it as a "New" credential if it wasn't used as a replacement
-            // (If it IS a replacement, it's already accounted for in the 'replacedMainIds' block above)
+            // Check if this credential SHOULD be associated with a Main credential even if IDs don't match
+            // This happens when a credential is "replaced" in the workflow JSON (different ID), but we want to display it as a modification of the old one.
+            // We already handled 'replacedMainIds' above. If 'isReplacement' is true, the work is done (attached to the Main ID).
+            
+            // However, the issue described is that we see TWO rows:
+            // 1. "Cloud Supabase (Main) -> Not Present (Staging)"
+            // 2. "Not Present (Main) -> Cloud Supabase Staging (Staging)"
+            // This happens because 'replacedByStagingId' wasn't detected correctly or 'replacements' map is incomplete.
+            
+            // If we missed the replacement link earlier, we might have a "New" credential here that is actually replacing an "Old" one.
+            // We can try to fuzzy match by Name or Type within the same file?
+            // BUT, if 'isReplacement' is false, it means we didn't find a direct replacement link.
+            
             if (!isReplacement) {
-              credentials.set(key, {
-                ...cred,
-                inMain: false,
-                inStaging: true,
-                files: [result.filename],
-                stagingName: cred.name,
-                stagingType: cred.type,
-                stagingNodeAuthType: cred.nodeAuthType,
-              });
+                // Check if there's an "Orphaned" Main credential of the SAME TYPE in the SAME FILE
+                // that doesn't have a Staging counterpart yet.
+                // This is a heuristic to merge "Split" rows.
+                
+                let foundMatch = false;
+                
+                // Iterate over existing credentials to find a candidate
+                // Use Array.from or forEach to avoid iterator issues with target config
+                const entries = Array.from(credentials.entries());
+                for (const [existingId, existing] of entries) {
+                    // @ts-ignore
+                    if (existing.inMain && !existing.inStaging &&
+                        // @ts-ignore
+                        existing.files.includes(result.filename) &&
+                        // @ts-ignore
+                        existing.type === cred.type) {
+                        
+                        // Found a candidate: Same Type, Same File, currently marked as "Removed" from Staging
+                        // We will assume this New Staging credential replaces this Old Main credential.
+                        console.log(`[PR Analyzer] Heuristic Merge: Linking new ${cred.name} (${cred.id}) to old ${// @ts-ignore
+                        existing.name} (${existingId})`);
+                        
+                        // @ts-ignore
+                        existing.inStaging = true;
+                        // @ts-ignore
+                        existing.stagingName = cred.name;
+                        // @ts-ignore
+                        existing.stagingId = cred.id;
+                        // @ts-ignore
+                        existing.name = cred.name; // Use new name
+                        // @ts-ignore
+                        existing.stagingType = cred.type;
+                        // @ts-ignore
+                        existing.stagingNodeAuthType = cred.nodeAuthType;
+                        
+                        foundMatch = true;
+                        break; // Only match one
+                    }
+                }
+                
+                if (!foundMatch) {
+                    credentials.set(key, {
+                        ...cred,
+                        inMain: false,
+                        inStaging: true,
+                        files: [result.filename],
+                        stagingName: cred.name,
+                        stagingType: cred.type,
+                        stagingNodeAuthType: cred.nodeAuthType,
+                    });
+                }
             }
           }
         });
@@ -399,6 +481,8 @@ export class PRAnalyzerService {
             const existing = domains.get(key);
             existing.inStaging = true;
             existing.stagingUrl = domain.url; // Explicitly set stagingUrl on existing
+            // Important: We should also update the file list if it's found here
+            // The previous logic already did this, but let's be explicit and verify
             if (!existing.files.includes(result.filename)) {
                 existing.files.push(result.filename);
             }
@@ -462,6 +546,27 @@ export class PRAnalyzerService {
         return false;
     });
 
+    // Enrich credentials with alternatives
+    const enrichedCredentials = filteredCredentials.map(cred => {
+        const type = cred.stagingType || cred.mainType;
+        let alternatives: Credential[] = [];
+        
+        if (type && credentialRegistry.has(type)) {
+            // Get all credentials of this type from Main
+            const allOfSameType = credentialRegistry.get(type)!;
+            
+            // Filter out the ones that are already represented as "Main" or "Staging" in this diff item
+            alternatives = allOfSameType.filter(alt =>
+                alt.id !== cred.mainId && alt.id !== cred.stagingId
+            );
+        }
+        
+        return {
+            ...cred,
+            alternatives
+        };
+    });
+
     // Filter out domains that are identical in both branches
     const filteredDomains = Array.from(domains.values()).filter(domain => {
         // If it's only in one branch, keep it (New or Removed)
@@ -485,7 +590,7 @@ export class PRAnalyzerService {
     });
 
     return {
-      credentials: filteredCredentials,
+      credentials: enrichedCredentials,
       domains: filteredDomains,
       workflowCalls: filteredWorkflowCalls,
       secrets: Array.from(new Set(secrets)), // Deduplicate secrets

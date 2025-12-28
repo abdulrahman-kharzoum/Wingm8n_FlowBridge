@@ -29,6 +29,7 @@ export interface CredentialDiff {
   stagingNodeAuthType?: string;
   mainNodeAuthType?: string;
   files: string[];
+  alternatives: Credential[]; // Other credentials of the same type from the base branch
 }
 
 // Domain/URL types
@@ -145,7 +146,7 @@ export interface WorkflowComparison {
 // Merge decision types
 export interface MergeDecision {
   credentials: {
-    [credentialId: string]: 'staging' | 'main' | 'keep-both';
+    [credentialId: string]: 'staging' | 'main' | 'keep-both' | string; // string = specific target credential ID
   };
   domains: {
     [url: string]: {

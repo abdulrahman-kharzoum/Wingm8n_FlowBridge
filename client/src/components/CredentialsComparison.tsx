@@ -3,7 +3,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Key,
   Search,
@@ -22,8 +28,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 interface CredentialsComparisonProps {
   credentials: CredentialDiff[];
-  onCredentialSelected?: (credentialId: string, source: 'staging' | 'main' | 'keep-both' | null) => void;
-  mergeDecisions?: Record<string, 'staging' | 'main' | 'keep-both'>;
+  onCredentialSelected?: (credentialId: string, source: 'staging' | 'main' | 'keep-both' | string | null) => void;
+  mergeDecisions?: Record<string, 'staging' | 'main' | 'keep-both' | string>;
 }
 
 export default function CredentialsComparison({
@@ -32,7 +38,7 @@ export default function CredentialsComparison({
   mergeDecisions = {},
 }: CredentialsComparisonProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selections, setSelections] = useState<Record<string, 'staging' | 'main' | 'keep-both'>>({});
+  const [selections, setSelections] = useState<Record<string, 'staging' | 'main' | 'keep-both' | string>>({});
 
   // Initialize selections from parent mergeDecisions
   useEffect(() => {
@@ -47,21 +53,13 @@ export default function CredentialsComparison({
     );
   });
 
-  const handleSelection = (credentialId: string, source: 'staging' | 'main' | 'keep-both') => {
+  const handleSelection = (credentialId: string, value: string) => {
     setSelections((prev) => {
-      // If unchecking the currently selected one
-      if (prev[credentialId] === source) {
-        const newState = { ...prev };
-        delete newState[credentialId];
-        onCredentialSelected?.(credentialId, null);
-        return newState;
-      }
-
       const newState = {
         ...prev,
-        [credentialId]: source,
+        [credentialId]: value,
       };
-      onCredentialSelected?.(credentialId, source);
+      onCredentialSelected?.(credentialId, value);
       return newState;
     });
   };
@@ -264,41 +262,48 @@ export default function CredentialsComparison({
                         <div className="space-y-3">
                             <div className="space-y-4">
                                 <div className="space-y-2">
-                                     <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Source Selection</div>
-                                     {cred.inMain && (
-                                        <div className={`flex items-center space-x-2 p-2 rounded border ${selections[cred.id] === 'main' ? 'bg-blue-500/10 border-blue-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
-                                            <Checkbox
-                                                id={`main-${cred.id}`}
-                                                checked={selections[cred.id] === 'main'}
-                                                onCheckedChange={() => handleSelection(cred.id, 'main')}
-                                                className="data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
-                                            />
-                                            <label
-                                                htmlFor={`main-${cred.id}`}
-                                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer text-slate-200"
-                                            >
-                                                Main Branch
-                                            </label>
-                                        </div>
-                                     )}
-                                     
-                                     {cred.inStaging && (
-                                        <div className={`flex items-center space-x-2 p-2 rounded border ${selections[cred.id] === 'staging' ? 'bg-amber-500/10 border-amber-500/50' : 'border-transparent hover:bg-slate-800/50'}`}>
-                                            <Checkbox
-                                                id={`staging-${cred.id}`}
-                                                checked={selections[cred.id] === 'staging'}
-                                                onCheckedChange={() => handleSelection(cred.id, 'staging')}
-                                                className="data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
-                                            />
-                                            <label
-                                                htmlFor={`staging-${cred.id}`}
-                                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer text-slate-200"
-                                            >
-                                                Staging Branch
-                                                {(!cred.inMain) && <Badge className="ml-2 text-[10px] bg-emerald-500/20 text-emerald-400 border-none">New</Badge>}
-                                            </label>
-                                        </div>
-                                     )}
+                                     <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Select Credential</div>
+                                     <Select
+                                        value={selections[cred.id]}
+                                        onValueChange={(value) => handleSelection(cred.id, value)}
+                                     >
+                                        <SelectTrigger className="w-full bg-slate-800 border-slate-600 text-slate-200">
+                                            <SelectValue placeholder="Choose credential..." />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-slate-800 border-slate-700 text-slate-200">
+                                            {cred.inStaging && (
+                                                <SelectItem value="staging" className="focus:bg-slate-700 focus:text-white">
+                                                    <span className="flex items-center gap-2">
+                                                        <span className="truncate max-w-[200px]">{cred.stagingName || cred.name}</span>
+                                                        <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">Staging</Badge>
+                                                        {!cred.inMain && <Badge className="text-[10px] bg-emerald-500/20 text-emerald-400 border-none">New</Badge>}
+                                                    </span>
+                                                </SelectItem>
+                                            )}
+                                            {cred.inMain && (
+                                                <SelectItem value="main" className="focus:bg-slate-700 focus:text-white">
+                                                    <span className="flex items-center gap-2">
+                                                        <span className="truncate max-w-[200px]">{cred.mainName || cred.name}</span>
+                                                        <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-400">Main</Badge>
+                                                    </span>
+                                                </SelectItem>
+                                            )}
+                                            {/* Alternatives */}
+                                            {cred.alternatives && cred.alternatives.length > 0 && (
+                                                <>
+                                                    <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Other Existing Options</div>
+                                                    {cred.alternatives.map(alt => (
+                                                        <SelectItem key={alt.id} value={alt.id} className="focus:bg-slate-700 focus:text-white">
+                                                            <span className="flex items-center gap-2">
+                                                                <span className="truncate max-w-[200px]">{alt.name}</span>
+                                                                <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-400">Main (Unchanged)</Badge>
+                                                            </span>
+                                                        </SelectItem>
+                                                    ))}
+                                                </>
+                                            )}
+                                        </SelectContent>
+                                     </Select>
                                 </div>
 
                                 {/* Result ID Display */}
@@ -307,13 +312,21 @@ export default function CredentialsComparison({
                                        <div className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-1">Final Result ID</div>
                                        <div className="flex items-center gap-2 bg-slate-950/50 p-2 rounded border border-slate-800">
                                            <code className="text-xs font-mono text-white flex-1 truncate">
-                                               {selections[cred.id] === 'staging' ? (cred.stagingId || cred.id) : (cred.mainId || cred.id)}
+                                               {
+                                                   selections[cred.id] === 'staging' ? (cred.stagingId || cred.id) :
+                                                   selections[cred.id] === 'main' ? (cred.mainId || cred.id) :
+                                                   selections[cred.id] // It's an explicit ID
+                                               }
                                            </code>
                                            <Button
                                                size="icon"
                                                variant="ghost"
                                                className="h-6 w-6 text-slate-500 hover:text-white"
-                                               onClick={() => copyToClipboard(selections[cred.id] === 'staging' ? (cred.stagingId || cred.id) : (cred.mainId || cred.id))}
+                                               onClick={() => copyToClipboard(
+                                                   selections[cred.id] === 'staging' ? (cred.stagingId || cred.id) :
+                                                   selections[cred.id] === 'main' ? (cred.mainId || cred.id) :
+                                                   selections[cred.id]
+                                               )}
                                            >
                                                <Copy className="w-3 h-3" />
                                            </Button>

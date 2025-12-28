@@ -316,7 +316,13 @@ export class GitHubService {
 
         if (file.type === 'file' && file.name.endsWith('.json')) {
           // Could be an N8N workflow file
-          workflowFiles.push(file);
+          // Filter out obviously non-workflow files to reduce noise
+          if (!file.name.includes('tsconfig') &&
+              !file.name.includes('package') &&
+              !file.name.includes('.eslintrc') &&
+              !file.name.includes('vercel.json')) {
+              workflowFiles.push(file);
+          }
         } else if (file.type === 'dir') {
           // Recursively search subdirectories
           const nestedFiles = await this.findWorkflowFiles(

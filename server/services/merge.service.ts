@@ -136,6 +136,20 @@ export class MergeService {
   ): Array<{ name: string; path: string; content: N8NWorkflow }> {
     console.log(`[Merge] Merging workflows: ${stagingWorkflows.length} staging, ${mainWorkflows.length} main`);
     
+    // Build a map of all available credentials in Main for lookup
+    const mainCredentialMap = new Map<string, string>(); // ID -> Name
+    mainWorkflows.forEach(wf => {
+      wf.content.nodes.forEach(node => {
+        if (node.credentials) {
+          Object.values(node.credentials).forEach((cred: any) => {
+            if (cred.id && cred.name) {
+              mainCredentialMap.set(cred.id, cred.name);
+            }
+          });
+        }
+      });
+    });
+
     const mergedWorkflows: Array<{ name: string; path: string; content: N8NWorkflow }> = [];
     const processedPaths = new Set<string>();
 
@@ -150,7 +164,8 @@ export class MergeService {
           stagingWorkflow.content,
           mainWorkflow.content,
           decisions,
-          mainWorkflow.path
+          mainWorkflow.path,
+          mainCredentialMap
         );
 
         mergedWorkflows.push({
@@ -187,7 +202,8 @@ export class MergeService {
     stagingWorkflow: N8NWorkflow,
     mainWorkflow: N8NWorkflow,
     decisions: MergeDecision,
-    filename: string
+    filename: string,
+    mainCredentialMap: Map<string, string>
   ): N8NWorkflow {
     console.log(`[Merge] Processing workflow: ${filename}`);
     console.log(`[Merge] Decisions: C=${Object.keys(decisions.credentials).length}, D=${Object.keys(decisions.domains).length}, WC=${Object.keys(decisions.workflowCalls).length}, M=${Object.keys(decisions.metadata).length}`);
@@ -210,7 +226,7 @@ export class MergeService {
     }
 
     // Apply credential decisions
-    this.applyCredentialDecisions(merged, stagingWorkflow, mainWorkflow, decisions.credentials);
+    this.applyCredentialDecisions(merged, stagingWorkflow, mainWorkflow, decisions.credentials, mainCredentialMap);
 
     // Apply domain decisions
     this.applyDomainDecisions(merged, stagingWorkflow, mainWorkflow, decisions.domains);
@@ -295,7 +311,8 @@ export class MergeService {
     merged: N8NWorkflow,
     stagingWorkflow: N8NWorkflow,
     mainWorkflow: N8NWorkflow,
-    credentialDecisions: Record<string, 'staging' | 'main' | 'keep-both'>
+    credentialDecisions: Record<string, string>,
+    mainCredentialMap: Map<string, string>
   ): void {
     console.log('[Merge] Applying credential decisions:', credentialDecisions);
     
@@ -304,23 +321,8 @@ export class MergeService {
       return;
     }
 
-    // 1. Identify Replacement Mappings
-    // We need to know which Main ID corresponds to which Staging ID to perform swaps
-    const replacements = new Map<string, string>(); // StagingID -> MainID (for reverting to Main)
-    
-    // We can infer replacements by looking at the decision keys.
-    // If we decided 'main', we want to replace StagingID with MainID wherever it appears.
-    // However, the decision key is usually the Main ID if it exists in Main.
-    // We need to find the corresponding Staging ID that replaced it.
-    
     // Helper to find Staging Credential ID that corresponds to a Main Credential ID
     const findStagingCounterpart = (mainId: string): string | undefined => {
-        // We can use the same logic as workflow-parser's getCredentialReplacements
-        // But since we don't have that handy here without re-parsing, let's look at the node structure
-        // A better approach: The frontend/PR analyzer already grouped them.
-        // We might just need to scan the Staging Workflow to see what ID is used in the same place.
-        // For now, let's scan all nodes in Staging vs Main to build a map.
-        
         // Let's build a quick map of NodeName -> { [credType]: credId } for both
         const stagingMap = new Map<string, Record<string, string>>();
         stagingWorkflow.nodes.forEach(n => {
@@ -351,50 +353,77 @@ export class MergeService {
     };
 
     Object.entries(credentialDecisions).forEach(([decidedCredId, source]) => {
+      // Determine what ID we are targeting
+      let targetId: string | undefined;
+      let targetName: string | undefined;
+
       if (source === 'main') {
-          // User wants the Main credential.
-          // If Staging replaced it with a new ID, we must revert that new ID to the Main ID globally.
+          targetId = decidedCredId;
+          targetName = mainCredentialMap.get(targetId);
+      } else if (source === 'staging') {
+          // Already there, nothing to do usually
+          return;
+      } else if (source !== 'keep-both') {
+          // It's a specific Alternative Credential ID
+          targetId = source;
+          targetName = mainCredentialMap.get(targetId);
+      }
+
+      if (targetId) {
+          // We need to replace whatever is currently in Staging (merged) with this targetId.
+          // First, identify what ID is currently being used in Staging.
+          // If the row key (decidedCredId) is a Main ID, find its Staging counterpart.
           const stagingId = findStagingCounterpart(decidedCredId);
           
-          if (stagingId) {
-              console.log(`[Merge] Map: Staging ${stagingId} should be reverted to Main ${decidedCredId}`);
-              
-              // Perform global replacement: Find stagingId, Replace with decidedCredId
-              const changes = this.recursiveReplace(
-                  merged,
-                  (val) => val === stagingId,
-                  () => decidedCredId,
-                  /id|credential/i // Optimization: only look at keys containing 'id' or 'credential'
-              );
-              console.log(`[Merge] Reverted ${changes} occurrences of credential ${stagingId} to ${decidedCredId}`);
+          // The ID to replace is either the Staging counterpart, OR the decidedCredId itself (if it was Staging-only)
+          const idToReplace = stagingId || decidedCredId;
 
-              // Also check for Authentication Method parameters
-              // If Main used a different auth method (e.g. "headerAuth" vs "bodyAuth"), we might need to revert that too
-              // This is harder to do globally. We'll stick to the node-level check for this specific part
-              mainWorkflow.nodes?.forEach(mainNode => {
-                 if (mainNode.parameters?.authentication) {
-                     const mergedNode = merged.nodes?.find(n => n.name === mainNode.name);
-                     // Only revert if this node actually uses the credential we just swapped
-                     const usesCred = Object.values(mainNode.credentials || {}).some((c: any) => c.id === decidedCredId);
-                     
-                     if (mergedNode && usesCred) {
-                         if (!mergedNode.parameters) mergedNode.parameters = {};
-                         if (mergedNode.parameters.authentication !== mainNode.parameters.authentication) {
-                             console.log(`[Merge] Reverting authentication mode for ${mergedNode.name}: ${mergedNode.parameters.authentication} -> ${mainNode.parameters.authentication}`);
-                             mergedNode.parameters.authentication = mainNode.parameters.authentication;
+          if (idToReplace && idToReplace !== targetId) {
+              console.log(`[Merge] Replacing credential ${idToReplace} with ${targetId} (Name: ${targetName})`);
+              
+              // 1. Replace IDs
+              const idChanges = this.recursiveReplace(
+                  merged,
+                  (val) => val === idToReplace,
+                  () => targetId,
+                  /id|credential/i
+              );
+              console.log(`[Merge] Updated ${idChanges} credential IDs`);
+
+              // 2. Replace Names (if we found the target name)
+              if (targetName) {
+                  // We need to find nodes that use this credential and update the name
+                  // N8N structure: credentials: { [type]: { id: "...", name: "..." } }
+                  // We can't just global replace the name string because it might be common.
+                  // We iterate nodes.
+                  merged.nodes?.forEach(node => {
+                      if (node.credentials) {
+                          Object.values(node.credentials).forEach((cred: any) => {
+                              if (cred.id === targetId) { // We already swapped the ID
+                                  cred.name = targetName;
+                              }
+                          });
+                      }
+                  });
+              }
+
+              // 3. Handle Auth Method consistency (only if we selected Main)
+              if (source === 'main') {
+                 mainWorkflow.nodes?.forEach(mainNode => {
+                     if (mainNode.parameters?.authentication) {
+                         const mergedNode = merged.nodes?.find(n => n.name === mainNode.name);
+                         const usesCred = Object.values(mainNode.credentials || {}).some((c: any) => c.id === decidedCredId);
+                         
+                         if (mergedNode && usesCred) {
+                             if (!mergedNode.parameters) mergedNode.parameters = {};
+                             if (mergedNode.parameters.authentication !== mainNode.parameters.authentication) {
+                                 mergedNode.parameters.authentication = mainNode.parameters.authentication;
+                             }
                          }
                      }
-                 }
-              });
-
-          } else {
-              console.log(`[Merge] No Staging replacement found for ${decidedCredId}. Ensuring it exists.`);
-              // It might just be deleted in Staging, or same ID.
-              // If same ID, nothing to replace.
+                 });
+              }
           }
-      } else if (source === 'staging') {
-          // User wants Staging. Staging is already the base of 'merged', so usually nothing to do.
-          // Unless we want to replace Main IDs that might have "leaked" (unlikely given we started with Staging clone)
       }
     });
 

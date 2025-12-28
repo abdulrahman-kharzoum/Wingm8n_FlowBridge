@@ -154,7 +154,7 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
                             </div>
                             {/* Files Display */}
                             {domain.files && domain.files.length > 0 && (
-                                <div className="pl-11">
+                                <div className="pl-11 mt-1">
                                     {domain.files.length === 1 ? (
                                         <div className="flex items-center gap-1.5 text-xs text-slate-500">
                                             <FileCode className="w-3 h-3 flex-shrink-0" />
@@ -224,7 +224,7 @@ export default function DomainsComparison({ domains, onDomainSelected, mergeDeci
                             </div>
                             {/* Files Display */}
                             {domain.files && domain.files.length > 0 && (
-                                <div className="pl-11">
+                                <div className="pl-11 mt-1">
                                     {domain.files.length === 1 ? (
                                         <div className="flex items-center gap-1.5 text-xs text-slate-500">
                                             <FileCode className="w-3 h-3 flex-shrink-0" />
