@@ -52,35 +52,46 @@ export const n8nRouter = router({
         targetName: z.string()
     }))
     .mutation(async ({ ctx, input }) => {
-         // Assuming ctx.user has the token. If not, we might need to adjust based on actual auth implementation.
-         // fallback to a process env token if user token not present? Or fail.
-         const token = (ctx as any).user?.githubToken;
-         
-         if (!token) {
-             throw new Error("Authentication required to access GitHub");
+         try {
+             // Assuming ctx.user has the token. If not, we might need to adjust based on actual auth implementation.
+             // fallback to a process env token if user token not present? Or fail.
+             const token = (ctx as any).user?.githubToken;
+             
+             if (!token) {
+                 throw new Error("Authentication required to access GitHub");
+             }
+             
+             const ghService = new GitHubService(token); 
+             
+             // Get PR details to find head ref
+             console.log(`[createWorkflowFromMapping] Fetching PR ${input.prNumber} for ${input.owner}/${input.repo}`);
+             const pr = await ghService.getPullRequest(input.owner, input.repo, input.prNumber);
+             const headBranch = pr.head.ref;
+             console.log(`[createWorkflowFromMapping] PR Head Branch: ${headBranch}`);
+             
+             // Fetch all workflows from that branch
+             const branchWorkflows = await fetchBranchWorkflows(ghService, input.owner, input.repo, headBranch);
+             console.log(`[createWorkflowFromMapping] Found ${branchWorkflows.workflows.length} workflows in branch`);
+             
+             // Find the workflow matching the targetName
+             // targetName might be "staging - My Flow" or "My Flow"
+             // The file name might not match exactly, we check the content name
+             const match = branchWorkflows.workflows.find(w => w.content.name === input.targetName || w.content.name === `staging - ${input.targetName}`);
+             
+             if (!match) {
+                 console.error(`[createWorkflowFromMapping] Workflow "${input.targetName}" not found. Available:`, branchWorkflows.workflows.map(w => w.content.name));
+                 throw new Error(`Workflow with name "${input.targetName}" not found in PR branch ${headBranch}`);
+             }
+             
+             // Create in N8N
+             console.log(`[createWorkflowFromMapping] Creating workflow "${match.content.name}" in N8N...`);
+             const result = await n8nService.createWorkflow(match.content);
+             console.log(`[createWorkflowFromMapping] Created workflow ID: ${result.id}`);
+             return result;
+         } catch (error: any) {
+             console.error('[createWorkflowFromMapping] Error:', error);
+             throw new Error(error.message || 'Failed to create workflow from mapping');
          }
-         
-         const ghService = new GitHubService(token); 
-         
-         // Get PR details to find head ref
-         const pr = await ghService.getPullRequest(input.owner, input.repo, input.prNumber);
-         const headBranch = pr.head.ref;
-         
-         // Fetch all workflows from that branch
-         const branchWorkflows = await fetchBranchWorkflows(ghService, input.owner, input.repo, headBranch);
-         
-         // Find the workflow matching the targetName
-         // targetName might be "staging - My Flow" or "My Flow"
-         // The file name might not match exactly, we check the content name
-         const match = branchWorkflows.workflows.find(w => w.content.name === input.targetName || w.content.name === `staging - ${input.targetName}`);
-         
-         if (!match) {
-             throw new Error(`Workflow with name "${input.targetName}" not found in PR branch ${headBranch}`);
-         }
-         
-         // Create in N8N
-         const result = await n8nService.createWorkflow(match.content);
-         return result;
     }),
 
   generateGraphSuggestion: publicProcedure

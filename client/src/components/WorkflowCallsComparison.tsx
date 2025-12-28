@@ -360,7 +360,12 @@ export default function WorkflowCallsComparison({
                                                                 <SelectContent className="bg-slate-800 border-slate-700 text-white max-h-[300px]">
                                                                     {isMissing && <SelectItem value={target} disabled>Missing: {suggestion?.targetName || 'Unknown'}</SelectItem>}
                                                                     {availableWorkflows.map(w => (
-                                                                        <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                                                                        <SelectItem key={w.id} value={w.id}>
+                                                                            <span className="flex flex-col text-left">
+                                                                                <span>{w.name}</span>
+                                                                                <span className="text-[10px] text-slate-500 font-mono">{w.id}</span>
+                                                                            </span>
+                                                                        </SelectItem>
                                                                     ))}
                                                                     {/* Include current ID if not in list */}
                                                                     {!availableWorkflows.some(w => w.id === target) && (
