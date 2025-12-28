@@ -262,7 +262,8 @@ export default function ComparisonPage() {
               owner: selectedRepo.owner,
               repo: selectedRepo.repo,
               prNumber: parseInt(prNumber),
-              targetName: call.targetWorkflowName
+              targetName: call.targetWorkflowName,
+              targetId: call.targetWorkflow // Pass ID for accurate lookup
           });
           
           toast.success(`Created workflow: ${result.name}`);

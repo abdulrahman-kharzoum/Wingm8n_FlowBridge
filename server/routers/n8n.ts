@@ -49,7 +49,8 @@ export const n8nRouter = router({
         owner: z.string(),
         repo: z.string(),
         prNumber: z.number(),
-        targetName: z.string()
+        targetName: z.string(),
+        targetId: z.string().optional()
     }))
     .mutation(async ({ ctx, input }) => {
          try {
@@ -73,13 +74,16 @@ export const n8nRouter = router({
              const branchWorkflows = await fetchBranchWorkflows(ghService, input.owner, input.repo, headBranch);
              console.log(`[createWorkflowFromMapping] Found ${branchWorkflows.workflows.length} workflows in branch`);
              
-             // Find the workflow matching the targetName
+             // Find the workflow matching the targetId (preferred) or targetName
              // targetName might be "staging - My Flow" or "My Flow"
              // The file name might not match exactly, we check the content name
-             const match = branchWorkflows.workflows.find(w => w.content.name === input.targetName || w.content.name === `staging - ${input.targetName}`);
+             const match = branchWorkflows.workflows.find(w => {
+                 if (input.targetId && w.content.id === input.targetId) return true;
+                 return w.content.name === input.targetName || w.content.name === `staging - ${input.targetName}`;
+             });
              
              if (!match) {
-                 console.error(`[createWorkflowFromMapping] Workflow "${input.targetName}" not found. Available:`, branchWorkflows.workflows.map(w => w.content.name));
+                 console.error(`[createWorkflowFromMapping] Workflow "${input.targetName}" (ID: ${input.targetId}) not found. Available:`, branchWorkflows.workflows.map(w => `${w.content.name} (${w.content.id})`));
                  throw new Error(`Workflow with name "${input.targetName}" not found in PR branch ${headBranch}`);
              }
              
@@ -168,11 +172,27 @@ export const n8nRouter = router({
                     targetName: potentialProdName
                 };
             } else {
-                 suggestions[call.targetWorkflow] = {
-                    status: 'missing',
-                    targetName: cleanName // Suggest the cleaned name for potential creation
-                };
+                 // Fuzzy/Partial match: Check if cleanName is contained within any production name
+                 // e.g. "Shopify update Price" inside "dev - Shopify update Price & Stock"
+                 const partialMatchKey = Array.from(prodMap.keys()).find(k => 
+                     k.toLowerCase().includes(cleanName.toLowerCase()) || 
+                     cleanName.toLowerCase().includes(k.toLowerCase())
+                 );
+
+                 if (partialMatchKey) {
+                     suggestions[call.targetWorkflow] = {
+                        status: 'mapped',
+                        targetId: prodMap.get(partialMatchKey),
+                        targetName: partialMatchKey
+                    };
+                 } else {
+                     suggestions[call.targetWorkflow] = {
+                        status: 'missing',
+                        targetName: cleanName // Suggest the cleaned name for potential creation
+                    };
+                 }
             }
+
         }
 
         
