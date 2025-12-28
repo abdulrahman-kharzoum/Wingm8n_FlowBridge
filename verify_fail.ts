@@ -1,6 +1,6 @@
 import { N8NWorkflow } from './shared/types/workflow.types';
 
-// Mock the MergeService functions we changed
+// Mock the MergeService functions - UPDATED LOGIC
 class MergeServiceMock {
     recursiveReplace(
         target: any,
@@ -9,7 +9,6 @@ class MergeServiceMock {
         keyFilter?: RegExp
     ): number {
         let changes = 0;
-
         if (Array.isArray(target)) {
             for (let i = 0; i < target.length; i++) {
                 if (typeof target[i] === 'object' && target[i] !== null) {
@@ -22,9 +21,6 @@ class MergeServiceMock {
         } else if (typeof target === 'object' && target !== null) {
             Object.keys(target).forEach(key => {
                 const value = target[key];
-                if (keyFilter && typeof value !== 'object' && !keyFilter.test(key)) {
-                    return;
-                }
                 if (predicate(value, key)) {
                     target[key] = replacer(value, key);
                     changes++;
@@ -41,69 +37,54 @@ class MergeServiceMock {
         domainDecisions: Record<string, { selected: 'staging' | 'main' | 'custom'; url: string }>
     ): void {
         console.log('[Mock] Applying domain decisions...');
-        
         Object.entries(domainDecisions).forEach(([decisionKey, decision]) => {
-            let decisionApplied = false;
             const targetUrl = decision.url;
-
-            // Strategy 2 Logic (Simulated)
-            console.log(`[Mock] Attempting global replace for key: ${decisionKey}`);
-            let replacedCount = 0;
+            console.log(`[Mock] Key: ${decisionKey}`);
             
-            replacedCount += this.recursiveReplace(
+            // Strategy 2a: Strict
+            let replacedCount = this.recursiveReplace(
                 merged,
                 (val) => typeof val === 'string' && val.includes(decisionKey),
                 (val) => val.replace(decisionKey, targetUrl)
             );
+
+            // Strategy 2b: Normalized (The Fix)
+            if (replacedCount === 0) {
+                const cleanKey = decisionKey.replace(/\s/g, '');
+                replacedCount += this.recursiveReplace(
+                    merged,
+                    (val) => typeof val === 'string' && val.replace(/\s/g, '') === cleanKey,
+                    () => targetUrl
+                );
+            }
             
             if (replacedCount > 0) {
                 console.log(`[Mock] Applied ${replacedCount} replacements`);
-                decisionApplied = true;
             } else {
-                console.log(`[Mock] No replacements made for ${decisionKey}`);
+                console.log(`[Mock] FAILED to apply decision`);
             }
         });
     }
 }
 
-// Test Case
-const workflow: N8NWorkflow = {
-    id: "1",
-    name: "Test Workflow",
-    nodes: [
-        {
-            id: "node1",
-            name: "HTTP Request",
-            type: "n8n-nodes-base.httpRequest",
-            parameters: {
-                // User's case: Expression containing the URL
-                imageUrls: "=https://txnqn.supabase.co/storage/v1{{ $json.signedURL }}"
-            }
-        }
-    ]
-};
+const KEY_FROM_LOG = "=https://qqjchjafauetffnfdyku.supabase.co/storage/v1/object/sign/consultation-images/{{ $('Get Image Path').item.json.image_path }}";
+const TARGET_FROM_LOG = "=https://txnqnxcziftohkypkvth.supabase.co/storage/v1/object/sign/consultation-images/new/{{ $('new Get Image Path').item.json.image_path }}";
 
-const decisions = {
-    // Case 1: Key is the base URL
-    "https://txnqn.supabase.co": {
-        selected: "main" as const,
-        url: "https://qqjch.supabase.co"
-    },
-    // Case 2: Key is the full expression (User's likely case)
-    "=https://txnqn.supabase.co/storage/v1{{ $json.signedURL }}": {
-        selected: "main" as const,
-        url: "=https://qqjch.supabase.co/storage/v1{{ $json.signedURL }}"
-    }
+// Test Case 2: Whitespace Difference
+const wf2: N8NWorkflow = {
+    id: "2", name: "Whitespace",
+    nodes: [{
+        id: "n2", name: "n2", type: "t",
+        parameters: { 
+            url: "=https://qqjchjafauetffnfdyku.supabase.co/storage/v1/object/sign/consultation-images/{{ $( 'Get Image Path' ).item.json.image_path }}"
+        }
+    }]
 };
 
 const service = new MergeServiceMock();
 
-console.log("--- Test Case 1: Partial Match ---");
-const wf1 = JSON.parse(JSON.stringify(workflow));
-service.applyDomainDecisions(wf1, { "https://txnqn.supabase.co": decisions["https://txnqn.supabase.co"] });
-console.log("Result 1:", wf1.nodes[0].parameters.imageUrls);
-
-console.log("\n--- Test Case 2: Full Expression Match ---");
-const wf2 = JSON.parse(JSON.stringify(workflow));
-service.applyDomainDecisions(wf2, { "=https://txnqn.supabase.co/storage/v1{{ $json.signedURL }}": decisions["=https://txnqn.supabase.co/storage/v1{{ $json.signedURL }}"] });
-console.log("Result 2:", wf2.nodes[0].parameters.imageUrls);
+console.log("\n--- Test 2: Whitespace Mismatch (With Fix) ---");
+service.applyDomainDecisions(wf2, { [KEY_FROM_LOG]: { selected: 'custom', url: TARGET_FROM_LOG } });
+console.log("Result 2:", wf2.nodes[0].parameters.url === TARGET_FROM_LOG ? "PASS" : "FAIL");
+// Use bracket notation to avoid TS error about possibly undefined
+console.log("Actual 2:", (wf2.nodes[0].parameters as any).url);

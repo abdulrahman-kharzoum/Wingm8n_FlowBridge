@@ -186,8 +186,36 @@ export class MergeService {
     // Add staging-only workflows
     for (const stagingWorkflow of stagingWorkflows) {
       if (!processedPaths.has(stagingWorkflow.path)) {
-        console.log(`[Merge] Staging-only workflow: ${stagingWorkflow.path}`);
-        mergedWorkflows.push(stagingWorkflow);
+        console.log(`[Merge] Staging-only workflow (New File): ${stagingWorkflow.path}`);
+        
+        // Even for new files, we must apply decisions (e.g. Credential mapping, Domains, etc.)
+        // We simulate an empty "Main" workflow for comparison
+        const dummyMainWorkflow: N8NWorkflow = {
+            id: '',
+            name: '',
+            nodes: [],
+            connections: {},
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            settings: {},
+            staticData: null,
+            tags: [],
+            versionId: 'new-file'
+        };
+
+        const merged = this.mergeWorkflowContent(
+          stagingWorkflow.content,
+          dummyMainWorkflow,
+          decisions,
+          stagingWorkflow.path, // Use staging path/name
+          mainCredentialMap
+        );
+
+        mergedWorkflows.push({
+            name: stagingWorkflow.name,
+            path: stagingWorkflow.path,
+            content: merged,
+        });
       }
     }
 
@@ -304,6 +332,43 @@ export class MergeService {
   }
 
   /**
+   * Recursively find and update credential objects ({ id, name }) in a single pass
+   */
+  private recursiveCredentialUpdate(
+      target: any,
+      targetId: string,
+      newId: string,
+      newName: string
+  ): number {
+      let changes = 0;
+
+      if (Array.isArray(target)) {
+          for (let i = 0; i < target.length; i++) {
+              if (typeof target[i] === 'object' && target[i] !== null) {
+                  changes += this.recursiveCredentialUpdate(target[i], targetId, newId, newName);
+              }
+          }
+      } else if (typeof target === 'object' && target !== null) {
+          // Check if this object IS a credential object (has id and name)
+          if (target.id === targetId && 'name' in target) {
+             console.log(`[Merge] Found credential object to update: ${target.id} -> ${newId}, ${target.name} -> ${newName}`);
+             target.id = newId;
+             target.name = newName;
+             changes++;
+          }
+          
+          // Continue traversal
+          Object.values(target).forEach(value => {
+              if (typeof value === 'object' && value !== null) {
+                  changes += this.recursiveCredentialUpdate(value, targetId, newId, newName);
+              }
+          });
+      }
+
+      return changes;
+  }
+
+  /**
    * Apply credential selection decisions to the merged workflow
    * Now performs GLOBAL replacement of credential IDs across the entire workflow
    */
@@ -321,144 +386,177 @@ export class MergeService {
       return;
     }
 
-    // Helper to find Staging Credential ID that corresponds to a Main Credential ID
-    const findStagingCounterpart = (mainId: string): string | undefined => {
-        // Let's build a quick map of NodeName -> { [credType]: credId } for both
-        const stagingMap = new Map<string, Record<string, string>>();
-        stagingWorkflow.nodes.forEach(n => {
-            if (n.credentials) {
-                const creds: Record<string, string> = {};
-                Object.entries(n.credentials).forEach(([type, c]: [string, any]) => creds[type] = c.id);
-                stagingMap.set(n.name, creds);
-            }
-        });
-        
-        let foundStagingId: string | undefined;
-        
-        mainWorkflow.nodes.forEach(n => {
-            if (n.credentials) {
-                Object.entries(n.credentials).forEach(([type, c]: [string, any]) => {
-                    if (c.id === mainId) {
-                        // Found the main credential usage. Check Staging node.
-                        const stagingCreds = stagingMap.get(n.name);
-                        if (stagingCreds && stagingCreds[type] && stagingCreds[type] !== mainId) {
-                            foundStagingId = stagingCreds[type];
-                        }
-                    }
-                });
-            }
-        });
-        
-        return foundStagingId;
-    };
+    // Helper: Build Main Credential Type Map (Main Cred ID -> Type)
+    const mainCredTypeMap = new Map<string, string>();
+    mainWorkflow.nodes.forEach(n => {
+        if (n.credentials) {
+            Object.entries(n.credentials).forEach(([type, c]: [string, any]) => {
+                if (c.id) mainCredTypeMap.set(c.id, type);
+            });
+        }
+    });
 
     Object.entries(credentialDecisions).forEach(([decidedCredId, source]) => {
-      // Determine what ID we are targeting
+      // decidedCredId is the key from the Diff. It might be Staging ID or Main ID.
+      // source is 'staging', 'main', or specific ID.
+
       let targetId: string | undefined;
       let targetName: string | undefined;
 
       if (source === 'main') {
-          targetId = decidedCredId;
-          targetName = mainCredentialMap.get(targetId);
+          // Verify if decidedCredId is the Main ID (it usually is if we selected Main for a Main-only cred, or if we keyed by ID)
+          // But if the diff Key was Staging ID, and we picked Main...
+          // We need to know what the TARGET ID is.
+          
+          // Assumption: If 'main' is selected, we want to use the Main version of this credential.
+          // BUT which Main credential?
+          // If decidedCredId IS the Main ID, we use it.
+          // If decidedCredId is Staging ID, we need to find its Main counterpart.
+          
+          // If decidedCredId exists in Main Cred map, it's a Main ID.
+          if (mainCredentialMap.has(decidedCredId)) {
+              targetId = decidedCredId;
+              targetName = mainCredentialMap.get(targetId);
+          } else {
+              // It's likely a Staging ID. We need to find the Main equivalent.
+              // This is hard without explicit mapping.
+              // BUT, usually the 'source' value IS 'main' meaning "Use the Main ID associated with this diff".
+              // If the diff grouped them, we don't know the Main ID here unless we re-derive it.
+              
+              // However, typically the UI sends the *Selected Value* as the second arg?
+              // `onCredentialSelected(id, value)`
+              // If I select "Main", value is 'main'.
+              
+              // Wait, if I select a SPECIFIC credential (e.g. from dropdown), value is the ID.
+              // If I select the "Main" column header or option, value is 'main'.
+              
+              // If the user selected "Main", we assume they want the Main Credential found in the same context.
+              // Let's try to find it by Node Name mapping.
+              
+              // Reverse lookup: Find Staging Node using decidedCredId, find corresponding Main Node, get its Cred ID.
+              const stagingNode = stagingWorkflow.nodes.find(n => 
+                  n.credentials && Object.values(n.credentials).some((c: any) => c.id === decidedCredId)
+              );
+              
+              if (stagingNode) {
+                  const mainNode = mainWorkflow.nodes.find(n => n.name === stagingNode.name);
+                  if (mainNode && mainNode.credentials && stagingNode.credentials) {
+                      // Find cred of same type
+                      const stgCredType = Object.keys(stagingNode.credentials).find(t => stagingNode.credentials![t].id === decidedCredId);
+                      if (stgCredType && mainNode.credentials[stgCredType]) {
+                          targetId = mainNode.credentials[stgCredType].id;
+                          targetName = mainNode.credentials[stgCredType].name;
+                      }
+                  }
+              }
+          }
       } else if (source === 'staging') {
-          // Already there, nothing to do usually
-          return;
+          return; // Keep as is
       } else if (source !== 'keep-both') {
-          // It's a specific Alternative Credential ID
+          // Explicit ID provided (e.g. user selected specific credential from dropdown)
           targetId = source;
-          targetName = mainCredentialMap.get(targetId);
+          targetName = mainCredentialMap.get(targetId) || 'Unknown Credential'; 
       }
 
       if (targetId) {
-          // We need to replace whatever is currently in Staging (merged) with this targetId.
-          // First, identify what ID is currently being used in Staging.
-          // If the row key (decidedCredId) is a Main ID, find its Staging counterpart.
-          const stagingId = findStagingCounterpart(decidedCredId);
+          console.log(`[Merge] Target Credential ID identified: ${targetId} (${targetName})`);
           
-          // The ID to replace is either the Staging counterpart, OR the decidedCredId itself (if it was Staging-only)
-          const idToReplace = stagingId || decidedCredId;
+          // We want to replace occurrences of the "Old" credential with `targetId`.
+          // The "Old" credential is whatever is currently in the merged workflow (Staging base).
+          // 1. If decidedCredId matches something in Staging, that's likely it.
+          // 2. If decidedCredId is the *Main* ID, we need to find what corresponds to it in Staging.
+          
+          let idToReplace: string | undefined;
+          
+          // Check if decidedCredId exists in Staging
+          const existsInStaging = stagingWorkflow.nodes.some(n => 
+              n.credentials && Object.values(n.credentials).some((c: any) => c.id === decidedCredId)
+          );
 
-          if (idToReplace && idToReplace !== targetId) {
-              console.log(`[Merge] Replacing credential ${idToReplace} with ${targetId} (Name: ${targetName})`);
-              
-              // 1. Replace IDs
-              const idChanges = this.recursiveReplace(
-                  merged,
-                  (val) => val === idToReplace,
-                  () => targetId,
-                  /id|credential/i
+          if (existsInStaging) {
+              idToReplace = decidedCredId;
+          } else {
+              // decidedCredId is likely Main ID. Find Staging counterpart.
+              // We need to find nodes that SHOULD use this credential.
+              // Strategy: Find Main nodes using targetId. Find matching Staging nodes. Get their cred ID.
+              const mainNodeUsingCred = mainWorkflow.nodes.find(n => 
+                  n.credentials && Object.values(n.credentials).some((c: any) => c.id === targetId)
               );
-              console.log(`[Merge] Updated ${idChanges} credential IDs`);
-
-              // 2. Replace Names (if we found the target name)
-              if (targetName) {
-                  // We need to find nodes that use this credential and update the name
-                  // N8N structure: credentials: { [type]: { id: "...", name: "..." } }
-                  // We can't just global replace the name string because it might be common.
-                  // We iterate nodes.
-                  merged.nodes?.forEach(node => {
-                      if (node.credentials) {
-                          Object.values(node.credentials).forEach((cred: any) => {
-                              if (cred.id === targetId) { // We already swapped the ID
-                                  cred.name = targetName;
-                              }
-                          });
-                      }
-                  });
-              }
-
-              // 3. Handle Auth Method consistency (only if we selected Main)
-              if (source === 'main') {
-                 mainWorkflow.nodes?.forEach(mainNode => {
-                     if (mainNode.parameters?.authentication) {
-                         const mergedNode = merged.nodes?.find(n => n.name === mainNode.name);
-                         const usesCred = Object.values(mainNode.credentials || {}).some((c: any) => c.id === decidedCredId);
-                         
-                         if (mergedNode && usesCred) {
-                             if (!mergedNode.parameters) mergedNode.parameters = {};
-                             if (mergedNode.parameters.authentication !== mainNode.parameters.authentication) {
-                                 mergedNode.parameters.authentication = mainNode.parameters.authentication;
-                             }
-                         }
-                     }
-                 });
+              
+              if (mainNodeUsingCred && mainNodeUsingCred.credentials) {
+                  const stagingNode = merged.nodes?.find(n => n.name === mainNodeUsingCred.name);
+                  if (stagingNode && stagingNode.credentials) {
+                       // Find cred of same type
+                       // We need the type from Main node
+                       const typeEntry = Object.entries(mainNodeUsingCred.credentials).find(([_, c]: [string, any]) => c.id === targetId);
+                       if (typeEntry) {
+                           const type = typeEntry[0];
+                           if (stagingNode.credentials[type]) {
+                               idToReplace = stagingNode.credentials[type].id;
+                           }
+                       }
+                  }
               }
           }
-      }
-    });
-
-    // Handle "exclude" scenario (Staging-only credential that user rejected)
-    // If source is 'main' but it doesn't exist in main, we should remove it.
-     Object.entries(credentialDecisions).forEach(([decidedCredId, source]) => {
-        if (source === 'main') {
-            const existsInMain = mainWorkflow.nodes?.some(n =>
-                Object.values(n.credentials || {}).some((c: any) => c.id === decidedCredId)
-            );
-            
-            if (!existsInMain) {
-              console.log(`[Merge] Excluding staging-only credential: ${decidedCredId}`);
-              // Remove occurrences
-              this.recursiveReplace(
-                  merged,
-                  (val, key) => val === decidedCredId,
-                  () => undefined, // This won't delete the key, just set to undefined.
-                  // For actual deletion, we need a parent-aware traversal or specific cleanup.
-                  // For now, let's do the specific node cleanup as before, which is safer for "removal"
-              );
+          
+          // Fallback: If we still don't have idToReplace, but we have a targetId that we want explicitly.
+          // Maybe the Staging node is NEW and uses a default/dev credential we want to swap.
+          // We can try to match by Credential Type?
+          // If we know targetId is "Google Sheets Prod", we find its type "googleSheets".
+          // We scan Staging nodes. If any uses "googleSheets" with ID !== targetId, we swap?
+          // That's aggressive but might be what the user wants if they selected "Use Main" globally.
+          // Let's stick to the safer mapping for now, but log warning.
+          
+          if (idToReplace && idToReplace !== targetId) {
+              console.log(`[Merge] Replacing credential ${idToReplace} -> ${targetId}`);
               
-              merged.nodes?.forEach(node => {
-                  if (node.credentials) {
-                      Object.keys(node.credentials).forEach(key => {
-                          // @ts-ignore
-                          if (node.credentials[key].id === decidedCredId) {
-                               // @ts-ignore
-                              delete node.credentials[key];
-                          }
-                      });
-                  }
-              });
-            }
-        }
+              // SINGLE PASS: Update both ID and Name simultaneously
+              // This fixes the issue where ID is updated but Name remains old if structure varies
+              if (targetName) {
+                  const changes = this.recursiveCredentialUpdate(
+                      merged,
+                      idToReplace,
+                      targetId,
+                      targetName
+                  );
+                  console.log(`[Merge] Updated ${changes} credential objects (ID & Name)`);
+              } else {
+                  // Fallback for ID only if name is missing (unlikely)
+                  const idChanges = this.recursiveReplace(
+                       merged,
+                       (val) => val === idToReplace,
+                       () => targetId,
+                       /id|credential/i
+                  );
+                  console.log(`[Merge] Updated ${idChanges} credential IDs (ID only fallback)`);
+              }
+
+              // Update Auth Parameters if needed
+              if (source === 'main' || source === targetId) {
+                   // Copy auth settings from Main node if possible
+                   // Find a Main node using this cred
+                   const mainRefNode = mainWorkflow.nodes.find(n => 
+                       n.credentials && Object.values(n.credentials).some((c: any) => c.id === targetId)
+                   );
+                   if (mainRefNode) {
+                        merged.nodes?.forEach(n => {
+                            // If this node uses the credential
+                            if (n.credentials && Object.values(n.credentials).some((c: any) => c.id === targetId)) {
+                                if (mainRefNode.parameters?.authentication) {
+                                    if (!n.parameters) n.parameters = {};
+                                    n.parameters.authentication = mainRefNode.parameters.authentication;
+                                }
+                            }
+                        });
+                   }
+              }
+
+          } else if (!idToReplace && existsInStaging === false) {
+             console.warn(`[Merge] Could not find Staging credential to replace for target ${targetId}`);
+             // This might happen if Staging has NO credential for this node yet?
+             // Or if the node is new in Staging but uses a THIRD ID?
+          }
+      }
     });
   }
 
@@ -492,119 +590,208 @@ export class MergeService {
           isWebhookDecision = true;
       }
 
-      // Value to find (What are we replacing?)
-      // If selected is 'main', we want to replace Staging URL with Main URL.
-      // But we need to know what the Staging URL *was*.
-      // The decision key is usually the "key" from the diff, which might be the URL itself or a Webhook ID.
-      
-      // Strategy:
-      // 1. If it's a Webhook, we look for the specific Webhook parameters (path/httpMethod) regardless of current value,
-      //    because we can identify the node by ID usually, but here we are doing global replace.
-      //    Actually, for Webhooks, "global replace" of a path is risky if it's common (e.g. "/webhook").
-      //    So for Webhooks, we stick to the Node-based approach but use recursiveReplace for the parameter object.
-      
-      // 2. For standard URLs, we find the "other" URL (the one NOT selected) and replace it with the selected one.
-      
-      let valueToReplace: string | null = null;
-      
       if (!isWebhookDecision) {
-           // Try to find what the "other" value was.
-           // If we selected Main, we want to find Staging's version of this URL.
-           // This requires looking up the diff or inferring it.
-           // Since we don't have the diff here, let's assume 'decisionKey' IS the URL we want to replace
-           // IF the decisionKey looks like a URL.
-           // But wait, the decisionKey is unique.
-           
-           // If decisionKey is a URL, it's likely the one we want to keep? No, the decision object has 'url'.
-           // Let's assume we want to replace ANY occurrence of the "Rejected" URL with the "Selected" URL.
-           // But we don't know the "Rejected" URL explicitly here.
-           
-           // Alternative: Just search for the "Staging" URL if we selected "Main".
-           // But we need to find it.
-           // Let's brute-force scan:
-           // If selected=Main, we scan Staging workflow to find corresponding nodes/values? No.
-           
-           // SIMPLER APPROACH:
-           // The user usually provides the "Key" as the URL they saw in the UI.
-           // If the UI showed "https://staging.api.com", and they picked "https://prod.api.com",
-           // Then 'decisionKey' might be "https://staging.api.com" (if it was new) or a composite key.
-           
-           // Let's look at how keys are generated in PR Analyzer:
-           // key = domain.url (if simple) OR "nodeId:path" (if collision/param).
-           
-           // If key contains ':', it's likely "nodeId:path".
-           if (decisionKey.includes(':') && !decisionKey.startsWith('http')) {
-               // Scoped replacement! Even better.
-               const [nodeId, paramPath] = decisionKey.split(':');
-               // Find the node with this ID
-               const node = merged.nodes.find(n => n.id === nodeId);
-               if (node && node.parameters) {
-                   // We need to set the value at paramPath to targetUrl
-                   // paramPath might be "options.url"
-                   const parts = paramPath.split('.');
-                   let current = node.parameters;
-                   for(let i=0; i<parts.length-1; i++) {
-                       current = current[parts[i]];
-                       if (!current) break;
+           if (decision.selected === 'main' || decision.selected === 'custom') {
+               const targetUrl = decision.url;
+               let decisionApplied = false;
+
+               // Strategy 1: Scoped Node replacement (nodeId:path)
+               // This is the most reliable method if the key preserves structural info.
+               if (decisionKey.includes(':') && !decisionKey.startsWith('http') && !decisionKey.startsWith('https')) {
+                   // Safe split strictly on first colon
+                   const firstColonIdx = decisionKey.indexOf(':');
+                   const nodeId = decisionKey.substring(0, firstColonIdx);
+                   const paramPath = decisionKey.substring(firstColonIdx + 1);
+
+                   // Find node in Merged workflow
+                   // Note: merged workflow nodes come from Staging. 
+                   // If the ID in the key is from Main (and differs from Staging), this will fail.
+                   let node = merged.nodes?.find(n => n.id === nodeId);
+                   
+                   // Fallback: Try finding by Name if ID lookup failed (assuming names are stable)
+                   if (!node) {
+                       // We can't easily access Main node name here without the full diff. 
+                       // But often IDs are consistent. 
+                       // If we are in the "New Files" scenario, IDs are definitely from Staging.
+                       // If "Old Files", IDs *should* match unless re-created.
                    }
-                   if (current) {
-                       const lastPart = parts[parts.length-1];
-                       console.log(`[Merge] Scoped update for ${node.name} (${paramPath}): ${current[lastPart]} -> ${targetUrl}`);
-                       current[lastPart] = targetUrl;
+
+                   if (node) {
+                       // Traverse and set
+                       // Path is likely relative to `parameters` (e.g. 'url', 'authentication.password')
+                       // But could be 'credentials.spotifyApi.id' ? Unlikely for domains.
+                       // Let's assume `parameters` root.
+                       
+                       if (node.parameters) {
+                           const parts = paramPath.split('.');
+                           let current: any = node.parameters;
+                           let validPath = true;
+                           
+                           // Navigate to the parent of the target property
+                           for(let i=0; i<parts.length-1; i++) {
+                               if (current && typeof current === 'object' && parts[i] in current) {
+                                   current = current[parts[i]];
+                               } else {
+                                   validPath = false;
+                                   break;
+                               }
+                           }
+                           
+                           if (validPath && current && typeof current === 'object') {
+                               const lastPart = parts[parts.length-1];
+                               // Only update if it exists or if we are sure? 
+                               // N8N parameters sometimes have defaults, but usually if it was diffed, it exists.
+                               console.log(`[Merge] Scoped update for node ${node.name} (${nodeId}) at ${paramPath}: ${current[lastPart]} -> ${targetUrl}`);
+                               current[lastPart] = targetUrl;
+                               decisionApplied = true;
+                           }
+                       }
                    }
                }
-           } else {
-               // It's a global URL key.
-               // We want to replace occurrences of the "Staging" URL with "Main" URL if selected=Main.
-               // But 'decisionKey' might be the *Main* URL if it was an existing one?
-               // Actually, if we selected Main, we want to put Main URL into the merged (which is Staging-based).
-               // So we want to find Staging URL and replace with Main URL.
-               // But we don't know Staging URL easily.
                
-               // Let's use the Recursive Replace to set the value to targetUrl
-               // matching on the *Path/Key* pattern rather than value?
-               // No, that's dangerous.
-               
-               // Let's try to match the VALUE that currently exists in 'merged' (which is Staging).
-               // If 'merged' has "http://staging.com" and target is "http://prod.com", we want to swap.
-               // We can just look for the node that contained this decision.
-               
-               // Fallback: Use the previous logic of scanning all nodes for URL-like fields.
-               // But now we check if the value matches the *decisionKey* (if it's a URL) OR if we can infer.
-               
-               if (decision.selected === 'main' || decision.selected === 'custom') {
-                   // We want to force this URL.
-                   // Iterate all nodes, find properties that look like URLs.
-                   // If they match the *Staging* version of this decision?
-                   // We lack the Staging value here.
+               // Strategy 2: Value-based recursive replacement (Substring/Expression support)
+               // Replaces substrings to support N8N expressions like "=https://api.com/{{...}}"
+               if (!decisionApplied) {
+                   console.log(`[Merge] Attempting global replace for key: ${decisionKey}`);
                    
-                   // WORKAROUND: We will iterate the original Staging workflow to find where this decisionKey came from?
-                   // No.
+                   let replacedCount = 0;
                    
-                   // Let's trust the previous implementation's logic but make it recursive:
-                   // Scan all string values. If value == decisionKey, replace.
-                   // This assumes decisionKey IS the value to replace.
-                   
-                   const changes = this.recursiveReplace(
+                   // Strategy 2a: Strict Substring Replacement
+                   // This handles standard cases where formatting matches
+                   replacedCount += this.recursiveReplace(
                        merged,
-                       (val) => val === decisionKey,
-                       () => targetUrl
+                       (val) => typeof val === 'string' && val.includes(decisionKey),
+                       (val) => val.replace(decisionKey, targetUrl)
                    );
-                   if (changes > 0) {
-                       console.log(`[Merge] Global replaced ${changes} occurrences of ${decisionKey} to ${targetUrl}`);
-                   } else {
-                       // If exact match failed, maybe it was a composite key or the value changed.
-                       // Let's try the key-based scan from previous implementation as a backup
-                       // (It handled fuzzy matching for webhooks, but for URLs it was exact)
+
+                   // Strategy 2b: Normalized Match (Ignore Whitespace)
+                   // Handles cases where N8N expressions differ only by spacing
+                   // e.g. {{ $json.id }} vs {{ $json.id }}
+                   if (replacedCount === 0) {
+                       const cleanKey = decisionKey.replace(/\s/g, '');
+                       
+                       replacedCount += this.recursiveReplace(
+                           merged,
+                           (val) => {
+                               if (typeof val !== 'string') return false;
+                               // We only support FULL value replacement for fuzzy matches to avoid corrupting partial strings
+                               const cleanVal = val.replace(/\s/g, '');
+                               return cleanVal === cleanKey || cleanVal.includes(cleanKey);
+                           },
+                           (val) => {
+                               // If it was an exact normalized match, replace the whole string
+                               const cleanVal = val.replace(/\s/g, '');
+                               if (cleanVal === cleanKey) {
+                                   return targetUrl;
+                               }
+                               // If it was a partial normalized match, we can't easily replace just the substring
+                               // without potentially breaking things.
+                               // But if the decisionKey is long (expression), it's likely safe to assume uniqueness.
+                               // Ideally we'd map indices, but that's complex.
+                               // Fallback: If cleanVal INCLUDES cleanKey, and cleanKey > 10 chars,
+                               // we might be able to replace?
+                               // Actually, for now, let's stick to Exact Normalized Match to be safe.
+                               return val;
+                           }
+                       );
+                       
+                       // Refined Strategy 2b Implementation above was logic-only.
+                       // Actual implementation:
+                       replacedCount += this.recursiveReplace(
+                            merged,
+                            (val) => typeof val === 'string' && val.replace(/\s/g, '') === cleanKey,
+                            () => targetUrl
+                       );
                    }
+                   
+                   // Strategy 2c: Trailing slash variations
+                   if (replacedCount === 0) {
+                        const altKey = decisionKey.endsWith('/') ? decisionKey.slice(0, -1) : decisionKey + '/';
+                        if (decisionKey.startsWith('http')) {
+                             replacedCount += this.recursiveReplace(
+                                merged,
+                                (val) => typeof val === 'string' && val.includes(altKey),
+                                (val) => val.replace(altKey, targetUrl)
+                             );
+                        }
+                   }
+
+                   // Strategy 3: Cross-Branch Reference (Main Workflow Lookup)
+                   // If the UI Key matches the Main workflow value, but Staging has a different value (e.g. previous custom edit),
+                   // we can't find the Key in Staging. We must find WHERE it is in Main, then update that path in Staging.
+                   if (replacedCount === 0 && mainWorkflow && mainWorkflow.nodes) {
+                       console.log(`[Merge] Strategy 3: Looking for key in Main workflow to identify path...`);
+                       let foundInMain = false;
+                       let targetNodeId: string | null = null;
+                       let targetParamPath: string | null = null;
+
+                       // Helper to find path to value
+                       const findPath = (obj: any, currentPath: string[] = []): boolean => {
+                           if (typeof obj === 'string' && (obj.includes(decisionKey) || obj.replace(/\s/g, '') === decisionKey.replace(/\s/g, ''))) {
+                               return true;
+                           }
+                           if (typeof obj === 'object' && obj !== null) {
+                               for (const k of Object.keys(obj)) {
+                                   if (findPath(obj[k], [...currentPath, k])) {
+                                       targetParamPath = [...currentPath, k].join('.');
+                                       return true;
+                                   }
+                               }
+                           }
+                           return false;
+                       };
+
+                       for (const node of mainWorkflow.nodes) {
+                           if (node.parameters && findPath(node.parameters)) {
+                               targetNodeId = node.id;
+                               foundInMain = true;
+                               console.log(`[Merge] Found key in Main Node ${node.name} (${node.id}) at path: ${targetParamPath}`);
+                               break;
+                           }
+                       }
+
+                       if (foundInMain && targetNodeId && targetParamPath) {
+                           // Find corresponding node in Merged (Staging) workflow
+                           const stagingNode = merged.nodes?.find(n => n.id === targetNodeId);
+                           if (stagingNode && stagingNode.parameters) {
+                               // Update the value at the found path
+                               const parts = (targetParamPath as string).split('.');
+                               let current: any = stagingNode.parameters;
+                               let validPath = true;
+                               
+                               for(let i=0; i<parts.length-1; i++) {
+                                   if (current && typeof current === 'object' && parts[i] in current) {
+                                       current = current[parts[i]];
+                                   } else {
+                                       validPath = false;
+                                       break;
+                                   }
+                               }
+
+                               if (validPath && current && typeof current === 'object') {
+                                   const lastPart = parts[parts.length-1];
+                                   console.log(`[Merge] Strategy 3 Success: Updating Staging node ${stagingNode.name} at ${targetParamPath}`);
+                                   // We overwrite with the target URL since we matched the logical location
+                                   current[lastPart] = targetUrl;
+                                   replacedCount++;
+                               }
+                           }
+                       }
+                   }
+                   
+                   if (replacedCount > 0) {
+                       console.log(`[Merge] Applied ${replacedCount} domain replacements (including fuzzy/cross-branch matches)`);
+                       decisionApplied = true;
+                   }
+               }
+
+               if (!decisionApplied) {
+                   console.warn(`[Merge] FAILED to apply domain decision: ${decisionKey} -> ${targetUrl}`);
                }
            }
       } else {
           // Webhook handling
-          // decisionKey format: "GET /webhook/path (Webhook)"
-          // decisionPath = "/webhook/path"
-          // We also have `targetMethod`
-          
+          let decisionApplied = false;
           let targetMethod = 'GET';
           const methodMatch = decision.url.match(/^([A-Z]+)\s+/);
           if (methodMatch) targetMethod = methodMatch[1];
@@ -612,34 +799,60 @@ export class MergeService {
               ? decision.url.match(/^[A-Z]+\s+(.+)\s+\(Webhook\)$/)![1]
               : targetUrl;
               
-          // Webhooks are usually identified by Node ID in our aggregation logic: "webhook:nodeId"
           if (decisionKey.startsWith('webhook:')) {
               const nodeId = decisionKey.split(':')[1];
-              const node = merged.nodes.find(n => n.id === nodeId);
+              const node = merged.nodes?.find(n => n.id === nodeId);
               if (node && node.parameters) {
                   console.log(`[Merge] Updating webhook node ${node.name}: path=${finalPath}, method=${targetMethod}`);
                   node.parameters.path = finalPath;
                   node.parameters.httpMethod = targetMethod;
               }
           } else {
-              // Legacy match by path string
-              // Find nodes with type webhook and matching path?
-              // Or just recursive replace of 'path' property if it matches old path?
-              // Dangerous. Let's stick to Node scanning for Webhooks.
-              merged.nodes.forEach(node => {
+              merged.nodes?.forEach(node => {
                   if (node.type.includes('webhook') && node.parameters) {
                       const currentPath = node.parameters.path;
                       const currentMethod = node.parameters.httpMethod || 'GET';
                       const currentKey = `${currentMethod} ${currentPath} (Webhook)`;
                       
-                      // Check if this node matches the decision key
                       if (currentKey === decisionKey || node.parameters.path === decisionPath) {
                           node.parameters.path = finalPath;
                           node.parameters.httpMethod = targetMethod;
                           console.log(`[Merge] Updated webhook ${node.name} via path match`);
+                          decisionApplied = true;
                       }
                   }
               });
+
+              // Fallback: If not found in merged (staging), try looking up key in Main workflow
+              if (!decisionApplied && mainWorkflow && mainWorkflow.nodes) {
+                  console.log(`[Merge] Webhook match failed in Staging. Looking for key in Main workflow: ${decisionKey}`);
+                  let targetNodeId: string | null = null;
+                  
+                  // Look for the node in Main that generates this key
+                  for (const node of mainWorkflow.nodes) {
+                       if (node.type.includes('webhook') && node.parameters) {
+                          const currentPath = node.parameters.path;
+                          const currentMethod = node.parameters.httpMethod || 'GET';
+                          const currentKey = `${currentMethod} ${currentPath} (Webhook)`;
+                          
+                          if (currentKey === decisionKey || node.parameters.path === decisionPath) {
+                              targetNodeId = node.id;
+                              console.log(`[Merge] Found matching webhook in Main: ${node.name} (${node.id})`);
+                              break;
+                          }
+                       }
+                  }
+
+                  if (targetNodeId) {
+                       const stagingNode = merged.nodes?.find(n => n.id === targetNodeId);
+                       if (stagingNode && stagingNode.parameters) {
+                           console.log(`[Merge] Updating Staging webhook ${stagingNode.name} via Main ID lookup`);
+                           stagingNode.parameters.path = finalPath;
+                           stagingNode.parameters.httpMethod = targetMethod;
+                           decisionApplied = true;
+                       }
+                  }
+              }
           }
       }
     });
@@ -665,8 +878,6 @@ export class MergeService {
     workflowCallDecisions: Record<string, 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string }>
   ): void {
     console.log('[Merge] Applying workflow call decisions:', workflowCallDecisions);
-    console.log(`[Merge] Workflow call decisions keys:`, Object.keys(workflowCallDecisions));
-    console.log(`[Merge] Workflow call decisions count:`, Object.keys(workflowCallDecisions).length);
     
     if (!workflowCallDecisions || Object.keys(workflowCallDecisions).length === 0) {
       console.log('[Merge] No workflow call decisions to apply');
@@ -675,54 +886,46 @@ export class MergeService {
 
     // Process each workflow call decision
     Object.entries(workflowCallDecisions).forEach(([callKey, action]) => {
-      console.log(`[Merge] Processing workflow call decision: ${callKey} -> ${typeof action === 'object' ? JSON.stringify(action) : action}`);
-      
       // callKey format: "sourceWorkflow->targetWorkflow"
       const parts = callKey.split('->');
       if (parts.length !== 2) {
-        console.warn(`[Merge] Invalid workflow call key format: ${callKey}`);
         return;
       }
       
       const [sourceWorkflow, targetWorkflow] = parts;
-      let changesApplied = 0;
-      
-      console.log(`[Merge] Looking for executeWorkflow nodes targeting: ${targetWorkflow}`);
       
       merged.nodes?.forEach((node) => {
         if (node.type === 'n8n-nodes-base.executeWorkflow' || node.type.includes('executeWorkflow')) {
-          const nodeTargetWorkflow = node.parameters?.workflowId;
-          const nodeSourceWorkflow = node.name; // Source workflow is typically the node name
-          
-          console.log(`[Merge] Found executeWorkflow node: ${node.name}, target=${nodeTargetWorkflow}, disabled=${node.disabled}`);
-          
-          // Check if this node matches the decision
-          if (nodeTargetWorkflow === targetWorkflow) {
+          // node.parameters.workflowId can be a String OR an Object (Resource Locator)
+          const rawParam = node.parameters?.workflowId;
+          const nodeTargetId = (typeof rawParam === 'object' && rawParam !== null) ? rawParam.value : rawParam;
+
+          // Check if this node matches the decision target
+          if (nodeTargetId === targetWorkflow) {
             if (action === 'remove') {
               node.disabled = true;
-              console.log(`[Merge] Disabled workflow call from ${sourceWorkflow} to ${targetWorkflow}`);
-              changesApplied++;
             } else if (action === 'add') {
               node.disabled = false;
-              console.log(`[Merge] Enabled workflow call from ${sourceWorkflow} to ${targetWorkflow}`);
-              changesApplied++;
-            } else if (action === 'keep') {
-              console.log(`[Merge] Keeping current state for workflow call from ${sourceWorkflow} to ${targetWorkflow}`);
             } else if (typeof action === 'object' && action.action === 'map') {
-               // Handle Mapping
-               console.log(`[Merge] Remapping workflow call for ${node.name} from ${targetWorkflow} to ${action.targetId} (${action.targetName})`);
+               console.log(`[Merge] Remapping ${node.name}: ${targetWorkflow} -> ${action.targetId} (${action.targetName})`);
+               
                if (node.parameters) {
-                   node.parameters.workflowId = action.targetId;
-                   changesApplied++;
+                   if (typeof node.parameters.workflowId === 'object' && node.parameters.workflowId !== null) {
+                       // Preserve object structure, update fields
+                       node.parameters.workflowId.value = action.targetId;
+                       if (action.targetName) {
+                           node.parameters.workflowId.cachedResultName = action.targetName;
+                       }
+                       node.parameters.workflowId.cachedResultUrl = `/workflow/${action.targetId}`;
+                   } else {
+                       // It's just a string, direct update
+                       node.parameters.workflowId = action.targetId;
+                   }
                }
             }
           }
         }
       });
-
-      if (changesApplied === 0) {
-        console.log(`[Merge] No matching nodes found for workflow call decision: ${callKey}`);
-      }
     });
   }
 
