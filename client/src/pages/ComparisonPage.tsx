@@ -76,6 +76,69 @@ export default function ComparisonPage() {
 
   const prComparisonQuery = trpc.prComparison.compare.useMutation();
 
+  // Auto-initialize decisions with Staging (Head) defaults when analysis loads
+  useEffect(() => {
+      const analysis = prComparisonQuery.data?.analysis;
+      if (!analysis) return;
+
+      setMergeDecisions(prev => {
+          const hasDecisions =
+              Object.keys(prev.credentials).length > 0 ||
+              Object.keys(prev.domains).length > 0 ||
+              Object.keys(prev.workflowCalls).length > 0;
+
+          if (hasDecisions) return prev;
+
+          const defaults: MergeDecision & { metadata: Record<string, 'staging' | 'main'> } = {
+              credentials: {},
+              domains: {},
+              workflowCalls: {},
+              metadata: {},
+          };
+
+          // Credentials: New/Modified -> Staging. Deleted -> null (Removed)
+          analysis.credentials.forEach((c: any) => {
+              if (c.inStaging) {
+                  defaults.credentials[c.id] = 'staging';
+              } else {
+                  // Only in Main (Deleted in Staging) -> Default to Remove
+                  defaults.credentials[c.id] = null as any;
+              }
+          });
+
+          // Domains: New/Modified -> Staging. Deleted -> null
+          analysis.domains.forEach((d: any) => {
+              if (d.inStaging) {
+                  defaults.domains[d.url] = { selected: 'staging', url: d.stagingUrl || d.url };
+              } else {
+                  defaults.domains[d.url] = null as any;
+              }
+          });
+
+          // Workflow Calls: New/Modified -> Add. Deleted -> Remove
+          analysis.workflowCalls.forEach((c: any) => {
+              const key = `${c.sourceWorkflow}->${c.targetWorkflow}`;
+              if (c.inStaging) {
+                  defaults.workflowCalls[key] = 'add';
+              } else {
+                  defaults.workflowCalls[key] = 'remove';
+              }
+          });
+
+          // Metadata
+          if (analysis.metadata) {
+              analysis.metadata.forEach((m: any) => {
+                  m.diffs.forEach((d: any) => {
+                      const uniqueKey = `${m.filename}-${d.key}`;
+                      defaults.metadata[uniqueKey] = 'staging';
+                  });
+              });
+          }
+
+          return defaults;
+      });
+  }, [prComparisonQuery.data?.analysis]);
+
   const handleComparePR = async () => {
       if (!selectedRepo || !prNumber) return;
       try {
@@ -178,6 +241,16 @@ export default function ComparisonPage() {
           workflowCalls: {
               ...prev.workflowCalls,
               [`${call.sourceWorkflow}->${call.targetWorkflow}`]: action
+          }
+      }));
+  };
+
+  const handleBulkWorkflowCallSelected = (updates: Record<string, 'add' | 'remove' | 'keep'>) => {
+      setMergeDecisions((prev) => ({
+          ...prev,
+          workflowCalls: {
+              ...prev.workflowCalls,
+              ...updates
           }
       }));
   };
@@ -539,6 +612,7 @@ export default function ComparisonPage() {
                     <WorkflowCallsComparison
                       workflowCalls={analysis.workflowCalls}
                       onCallSelected={handleWorkflowCallSelected}
+                      onBulkCallSelected={handleBulkWorkflowCallSelected}
                       mergeDecisions={mergeDecisions.workflowCalls}
                     />
                   </TabsContent>

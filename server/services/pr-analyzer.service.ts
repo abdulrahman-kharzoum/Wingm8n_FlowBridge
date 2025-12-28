@@ -474,10 +474,20 @@ export class PRAnalyzerService {
         return false;
     });
 
+    // Filter out workflow calls that are identical in both branches
+    const filteredWorkflowCalls = Array.from(workflowCalls.values()).filter(call => {
+        // If it's only in one branch, keep it (Added or Removed)
+        if (!call.inMain || !call.inStaging) return true;
+
+        // If it exists in both, it's unchanged.
+        // We assume source/target workflow IDs are the identity.
+        return true; // Keep unchanged workflow calls too so users can see the full graph
+    });
+
     return {
       credentials: filteredCredentials,
       domains: filteredDomains,
-      workflowCalls: Array.from(workflowCalls.values()),
+      workflowCalls: filteredWorkflowCalls,
       secrets: Array.from(new Set(secrets)), // Deduplicate secrets
       metadata: metadataDiffs,
       nodeChanges: nodeDiffs,

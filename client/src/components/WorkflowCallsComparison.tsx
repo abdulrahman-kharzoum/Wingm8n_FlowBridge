@@ -15,6 +15,7 @@ import type { WorkflowCallDiff, WorkflowCall } from '@shared/types/workflow.type
 interface WorkflowCallsComparisonProps {
   workflowCalls: (WorkflowCall & { filename?: string })[]; // Adapted to receive flat list but we might want to process it into chains if not already
   onCallSelected?: (call: WorkflowCall, action: 'add' | 'remove' | 'keep') => void;
+  onBulkCallSelected?: (updates: Record<string, 'add' | 'remove' | 'keep'>) => void;
   mergeDecisions?: Record<string, 'add' | 'remove' | 'keep'>;
 }
 
@@ -46,6 +47,7 @@ const ChainArrow = () => (
 export default function WorkflowCallsComparison({
   workflowCalls,
   onCallSelected,
+  onBulkCallSelected,
   mergeDecisions = {},
 }: WorkflowCallsComparisonProps) {
     // Process flat calls into a map of relationships for visualization
@@ -53,12 +55,9 @@ export default function WorkflowCallsComparison({
     const relationships = useMemo(() => {
         const groups: Record<string, typeof workflowCalls> = {};
         workflowCalls.forEach(call => {
-            // Filter out unchanged workflow calls (present in both branches)
-            // We assume that if it's in both, it's the same call.
-            // Check 'inMain' and 'inStaging' properties which are added by the analyzer
-            if ((call as any).inMain && (call as any).inStaging) {
-                return;
-            }
+            // Note: Backend filtering should handle unchanged calls.
+            // If we filter here again, we might hide items the user wants to see if we disabled backend filtering.
+            // We'll trust the input list.
 
             if (!groups[call.sourceWorkflow]) {
                 groups[call.sourceWorkflow] = [];
@@ -94,6 +93,24 @@ export default function WorkflowCallsComparison({
             onCallSelected?.(call, 'add');
         }
         setActiveCalls(newSet);
+    };
+
+    const selectAll = () => {
+        const newSet = new Set(activeCalls);
+        const updates: Record<string, 'add' | 'remove' | 'keep'> = {};
+        
+        workflowCalls.forEach(call => {
+             const key = `${call.sourceWorkflow}->${call.targetWorkflow}`;
+             if (!newSet.has(key)) {
+                 newSet.add(key);
+                 updates[key] = 'add';
+             }
+        });
+        
+        setActiveCalls(newSet);
+        if (Object.keys(updates).length > 0) {
+            onBulkCallSelected?.(updates);
+        }
     };
 
   return (
@@ -187,9 +204,19 @@ export default function WorkflowCallsComparison({
                                 <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10">Result</Badge>
                                 <span className="text-xs text-slate-500">Final Graph</span>
                              </div>
-                             <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400">
-                                 <RefreshCw className="w-3 h-3" />
-                             </Button>
+                             <div className="flex items-center gap-1">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-[10px] text-slate-400 hover:text-white"
+                                    onClick={selectAll}
+                                >
+                                    Select All
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400">
+                                    <RefreshCw className="w-3 h-3" />
+                                </Button>
+                             </div>
                         </div>
                          
                         <div className="space-y-4 bg-slate-900/50 p-4 rounded-xl border border-slate-800 min-h-[300px]">
