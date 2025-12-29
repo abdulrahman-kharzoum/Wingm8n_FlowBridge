@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import CreateStagingCredentialsDialog from '@/components/CreateStagingCredentialsDialog';
 import {
   Select,
   SelectContent,
@@ -25,6 +26,7 @@ export default function RepositorySelector({ onRepositorySelected, isLoading = f
   const [mainBranch, setMainBranch] = useState<string>('main');
   const [branches, setBranches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
 
   // Fetch repositories
   const repositoriesQuery = trpc.github.listRepositories.useQuery(
@@ -245,7 +247,24 @@ export default function RepositorySelector({ onRepositorySelected, isLoading = f
             <li>✓ Help you create a merge branch with your selected changes</li>
           </ul>
         </div>
+
+        {selectedRepo && (
+          <div className="pt-4 border-t border-slate-700">
+             <Button
+              onClick={() => setShowCredentialsDialog(true)}
+              variant="outline"
+              className="w-full border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700"
+            >
+              Create Staging Credentials
+            </Button>
+          </div>
+        )}
       </CardContent>
+
+      <CreateStagingCredentialsDialog
+        open={showCredentialsDialog}
+        onOpenChange={setShowCredentialsDialog}
+      />
     </Card>
   );
 }

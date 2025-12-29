@@ -45,33 +45,47 @@ export class N8nService {
       // Assuming the webhook returns the created workflow ID and Name
       // Adjust structure based on actual Webhook response
       // Handle array response (as specified by user requirement)
+      // Handle N8N execution data structure (Array of One item usually)
       if (Array.isArray(response.data) && response.data.length > 0) {
-          const wf = response.data[0];
-          return {
-              id: wf.id,
-              name: wf.name
-          };
+          const firstItem = response.data[0];
+          
+          // Check for direct ID/Name (if webhook returns simple JSON)
+          if (firstItem.id && firstItem.name) {
+               return { id: firstItem.id, name: firstItem.name };
+          }
+          
+          // Check for N8N "Last Node Executed" structure: { result: { data: { json: { id, name } } } }
+          if (firstItem.result?.data?.json?.id) {
+              return {
+                  id: firstItem.result.data.json.id,
+                  name: firstItem.result.data.json.name || cleanName
+              };
+          }
+
+          // Sometimes it might be directly in json property?
+          if (firstItem.json?.id) {
+              return {
+                  id: firstItem.json.id,
+                  name: firstItem.json.name || cleanName
+              };
+          }
       }
 
       // Handle single object response
-      if (response.data && (response.data.id || response.data.workflowId)) {
-          return {
-              id: response.data.id || response.data.workflowId,
-              name: response.data.name || cleanName
-          };
-      }
-      
-      // Fallback if webhook just says "OK" but we need the ID? 
-      // The requirement says: "get the new id from it using webhook in n8n"
-      // So we assume the webhook returns it.
-      
-      // If the webhook response is just the string "Workflow created" or similar, we might have a problem.
-      // But let's check if the response data ITSELF is the workflow object
-      if (response.data && response.data.name === cleanName) {
-           return {
-              id: response.data.id,
-              name: response.data.name 
-          };
+      if (response.data) {
+           if (response.data.id || response.data.workflowId) {
+                return {
+                    id: response.data.id || response.data.workflowId,
+                    name: response.data.name || cleanName
+                };
+           }
+           // Check nesting in single object
+           if (response.data.result?.data?.json?.id) {
+               return {
+                    id: response.data.result.data.json.id,
+                    name: response.data.result.data.json.name || cleanName
+                };
+           }
       }
       
       console.warn('[N8nService] Webhook response did not contain clear ID, returning partial info', response.data);

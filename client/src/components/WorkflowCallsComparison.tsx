@@ -41,6 +41,7 @@ interface WorkflowCallsComparisonProps {
   onCreateAllMissing?: (missingCalls: WorkflowCall[]) => void;
   isCreatingAllMissing?: boolean;
   addedWorkflows?: Array<{ name: string; id?: string; filename: string }>;
+  createdWorkflows?: Map<string, string>; // Name -> ID
 }
 
 const ChainNode = ({ name, id, type = 'default' }: { name: string; id?: string; type?: 'default' | 'source' | 'target' | 'new' }) => {
@@ -81,7 +82,8 @@ export default function WorkflowCallsComparison({
   onCreateViaWebhook,
   onCreateAllMissing,
   isCreatingAllMissing,
-  addedWorkflows = []
+  addedWorkflows = [],
+  createdWorkflows = new Map()
 }: WorkflowCallsComparisonProps) {
     const [resolvingCall, setResolvingCall] = useState<WorkflowCall | null>(null);
     const [resolveMode, setResolveMode] = useState<'manual' | 'create'>('create');
@@ -129,21 +131,25 @@ export default function WorkflowCallsComparison({
                 // Check if exists in Prod (Main)
                 const existsInProd = availableWorkflows.some(w => w.name === expectedProdName);
                 
-                // Check if exists in Added Workflows (New in PR)
+                // Check if exists in Created Workflows
+                const existsInCreated = createdWorkflows.has(expectedProdName) || createdWorkflows.has(stagingName);
+
+                // Check if exists in Added Workflows (New in PR) - IF NOT ALREADY CREATED
                 // We match loosely by name since ID might not be known yet or strictly by Name if available
                 const existsInAdded = addedWorkflows.some(w => w.name === expectedProdName || w.name === stagingName);
 
                 // Also check if mapped already
                 const isMapped = suggestions?.[targetKey]?.status === 'mapped';
 
-                if (!existsInProd && !existsInAdded && !isMapped) {
+                // If created, it's not missing anymore (we have an ID map for it)
+                if (!existsInProd && !existsInCreated && !existsInAdded && !isMapped) {
                     missing.push(call);
                     seenTargets.add(targetKey);
                 }
             }
         });
         return missing;
-    }, [workflowCalls, availableWorkflows, suggestions, addedWorkflows]);
+    }, [workflowCalls, availableWorkflows, suggestions, addedWorkflows, createdWorkflows]);
 
     // Calculate actual missing workflows to CREATE (including those from Added Workflows that aren't in Prod yet)
     // The user wants to see "Create Missing" for workflows that are detected as NEW in this PR (Added Files)
@@ -169,7 +175,11 @@ export default function WorkflowCallsComparison({
                  name = `dev - ${name}`;
             }
 
-            if (!availableWorkflows.some(aw => aw.name === name)) {
+            // Exclude if already created or in available workflows
+            const existsInCreated = createdWorkflows.has(name);
+            const existsInProd = availableWorkflows.some(aw => aw.name === name);
+
+            if (!existsInProd && !existsInCreated) {
                  if (!seenNames.has(name)) {
                      toCreate.push({ name, source: 'New File in PR' });
                      seenNames.add(name);
@@ -186,14 +196,17 @@ export default function WorkflowCallsComparison({
                  name = `dev - ${name}`;
             }
             
-            if (!seenNames.has(name) && !availableWorkflows.some(aw => aw.name === name)) {
+            const existsInCreated = createdWorkflows.has(name);
+            const existsInProd = availableWorkflows.some(aw => aw.name === name);
+
+            if (!seenNames.has(name) && !existsInProd && !existsInCreated) {
                 toCreate.push({ name, source: 'Missing Call Target', originalCall: call });
                 seenNames.add(name);
             }
         });
 
         return toCreate;
-    }, [addedWorkflows, missingCalls, availableWorkflows]);
+    }, [addedWorkflows, missingCalls, availableWorkflows, createdWorkflows]);
 
     useEffect(() => {
         const initial = new Set<string>();
@@ -236,6 +249,7 @@ export default function WorkflowCallsComparison({
     };
     
     const handleManualMappingChange = (call: WorkflowCall, targetId: string) => {
+         // Check available workflows first
          const targetWf = availableWorkflows.find(w => w.id === targetId);
          if (targetWf) {
              onCallSelected?.(call, {
@@ -243,7 +257,35 @@ export default function WorkflowCallsComparison({
                  targetId: targetWf.id,
                  targetName: targetWf.name
              });
+             return;
          }
+         
+         // Check created workflows (reverse lookup by ID)
+         // Actually targetId IS the ID.
+         // We might not have the name easily if it's not in availableWorkflows map efficiently.
+         // But we can iterate createdWorkflows.
+         let createdName = '';
+         Array.from(createdWorkflows.entries()).forEach(([name, id]) => {
+             if (id === targetId) {
+                 createdName = name;
+             }
+         });
+         
+         if (createdName) {
+             onCallSelected?.(call, {
+                 action: 'map',
+                 targetId: targetId,
+                 targetName: createdName
+             });
+             return;
+         }
+         
+         // Fallback for Added Workflows pseudo-selection
+         // If it starts with "pending-", extract name?
+         // Or if we allowed selecting "pending-" items, we probably can't MAP them yet?
+         // Actually, newly created workflows WILL have an ID in 'createdWorkflows'.
+         // "Added Workflows" that are NOT created don't have an ID yet.
+         // If user selects them, what happens? "Create" then map?
     };
 
     const selectAll = () => {
@@ -445,20 +487,42 @@ export default function WorkflowCallsComparison({
                                             const isMappedDecision = typeof decision === 'object' && decision.action === 'map';
                                             let currentMappingId = target;
                                             
+                                            // Determine Target Name for suggestion logic display
+                                            let targetDisplayName = callObj.targetWorkflowName || target;
+
+                                            // Determine if created
+                                            let createdId: string | undefined;
+                                            if (createdWorkflows.has(targetDisplayName)) {
+                                                createdId = createdWorkflows.get(targetDisplayName);
+                                            } else if (createdWorkflows.has(target)) {
+                                                createdId = createdWorkflows.get(target);
+                                            } else {
+                                                // Try normalized
+                                                let normName = targetDisplayName;
+                                                 if (normName.startsWith('staging - ')) {
+                                                    normName = normName.replace('staging - ', 'dev - ');
+                                                } else if (!normName.startsWith('dev - ')) {
+                                                     normName = `dev - ${normName}`;
+                                                }
+                                                if (createdWorkflows.has(normName)) {
+                                                    createdId = createdWorkflows.get(normName);
+                                                }
+                                            }
+
                                             if (isMappedDecision) {
                                                 currentMappingId = decision.targetId;
                                             } else {
-                                                // If no decision yet, check if we have a suggestion
+                                                // If no decision yet, check if we have a suggestion or it was just Created
                                                 const suggestion = suggestions?.[target];
                                                 if (suggestion?.status === 'mapped' && suggestion.targetId) {
                                                      currentMappingId = suggestion.targetId || target;
-                                                     // If not already in decision, we might want to trigger update? 
-                                                     // But render-time derivation is safer for display.
+                                                 } else if (createdId) {
+                                                     currentMappingId = createdId;
                                                  }
                                             }
                                             
                                             const suggestion = suggestions?.[target];
-                                            const isMissing = suggestion?.status === 'missing';
+                                            const isMissing = suggestion?.status === 'missing' && !createdId;
                                             const inMain = calls.some((c: any) => c.targetWorkflow === target && c.inMain);
                                             const inStaging = calls.some((c: any) => c.targetWorkflow === target && c.inStaging);
 
@@ -474,11 +538,12 @@ export default function WorkflowCallsComparison({
                                                         <div className="flex flex-col">
                                                             <div className="flex items-center gap-2">
                                                                 <span className="text-sm font-medium text-white">
-                                                                    {callObj.targetWorkflowName || target}
+                                                                    {targetDisplayName}
                                                                 </span>
                                                                 <div className="flex gap-1">
                                                                     {inMain && <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-400">Main</Badge>}
                                                                     {inStaging && <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">Staging</Badge>}
+                                                                    {createdId && <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-400 bg-emerald-500/10">Created</Badge>}
                                                                 </div>
                                                             </div>
                                                             <span className="text-[10px] text-slate-500 font-mono mt-0.5">{target}</span>
@@ -506,21 +571,31 @@ export default function WorkflowCallsComparison({
                                                                             </span>
                                                                         </SelectItem>
                                                                     ))}
-                                                                    {/* Include Added Workflows as options */}
+                                                                    {/* Include Created Workflows */}
+                                                                    {Array.from(createdWorkflows.entries()).map(([name, id]) => (
+                                                                        <SelectItem key={id} value={id}>
+                                                                             <span className="flex flex-col text-left">
+                                                                                <span className="flex items-center gap-2">
+                                                                                    {name}
+                                                                                    <Badge variant="outline" className="text-[8px] h-3 px-1 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">Created</Badge>
+                                                                                </span>
+                                                                                <span className="text-[10px] text-slate-500 font-mono">{id}</span>
+                                                                            </span>
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                    
+                                                                    {/* Include Added Workflows as options - Only if NOT created yet */}
                                                                     {addedWorkflows.map((w, idx) => {
-                                                                         // If it has an ID, use it, otherwise use Name as logic
-                                                                         // But for the select, we usually need a unique value.
-                                                                         // If ID is missing, we might not be able to "Link" to it properly yet until created?
-                                                                         // But user asked to include them.
-                                                                         // Let's assume we can link by name or temporary ID? 
-                                                                         // Ideally we map to what it WILL be. 
+                                                                         let devName = w.name;
+                                                                         if (devName.startsWith('staging - ')) {
+                                                                            devName = devName.replace('staging - ', 'dev - ');
+                                                                        } else if (!devName.startsWith('dev - ')) {
+                                                                             devName = `dev - ${devName}`;
+                                                                        }
                                                                          
-                                                                         // Actually, "New in PR" workflows are not yet in Production (Main), so they don't have a prod ID.
-                                                                         // They will be created.
-                                                                         // So they shouldn't necessarily be in the "Existing Production Workflows" list unless we treat them as "Pending Creation".
-                                                                         // But user said: "update the dropdonw list ... to use the new added workflows to be mapped".
-                                                                         // This implies mapping the Staging Call -> The New Workflow File (which will become Prod).
-                                                                         
+                                                                         // If already created, don't show as "New in PR"
+                                                                         if (createdWorkflows.has(devName) || createdWorkflows.has(w.name)) return null;
+
                                                                          const val = w.id || `pending-${w.name}`;
                                                                          if (availableWorkflows.some(aw => aw.id === val)) return null;
 
@@ -537,13 +612,12 @@ export default function WorkflowCallsComparison({
                                                                          );
                                                                     })}
                                                                     {/* Include current ID if not in list */}
-                                                                    {!availableWorkflows.some(w => w.id === target) && (
+                                                                    {!availableWorkflows.some(w => w.id === target) && !createdId && (
                                                                         <SelectItem value={target}>{callObj.targetWorkflowName || target} (Current)</SelectItem>
                                                                     )}
                                                                     {/* Include selected mapped ID if different from target and not in list */}
-                                                                    {selectValue && selectValue !== target && !availableWorkflows.some(w => w.id === selectValue) && (
+                                                                    {selectValue && selectValue !== target && !availableWorkflows.some(w => w.id === selectValue) && !createdId && (
                                                                         <SelectItem value={selectValue}>
-                                                                            {/* Try to find name from decision/suggestion or fallback to ID */}
                                                                             {(typeof decision === 'object' ? decision.targetName : null) || suggestion?.targetName || selectValue} (Mapped)
                                                                         </SelectItem>
                                                                     )}

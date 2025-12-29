@@ -39,7 +39,6 @@ import WorkflowCallsComparison from '@/components/WorkflowCallsComparison';
 import MetadataComparison from '@/components/MetadataComparison';
 import NodeChangesComparison from '@/components/NodeChangesComparison';
 import MergeDecisionSummary from '@/components/MergeDecisionSummary';
-import CreateStagingCredentialsDialog from '@/components/CreateStagingCredentialsDialog';
 import type { MergeDecision } from '@shared/types/workflow.types';
 import { toast } from 'sonner';
 
@@ -61,7 +60,7 @@ export default function ComparisonPage() {
     metadata: {},
   });
   const [showMergeSuccessDialog, setShowMergeSuccessDialog] = useState(false);
-  const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
+  const [createdWorkflows, setCreatedWorkflows] = useState<Map<string, string>>(new Map()); // Name -> ID
   const [mergeResult, setMergeResult] = useState<{
       branchName: string;
       prUrl?: string;
@@ -382,6 +381,13 @@ export default function ComparisonPage() {
           toast.success(`Created workflow: ${result.name}`);
           n8nUtils.getWorkflows.invalidate();
           
+          // Add to created workflows state
+          setCreatedWorkflows(prev => {
+              const newMap = new Map(prev);
+              newMap.set(result.name, result.id);
+              return newMap;
+          });
+          
           // Auto-link
           handleWorkflowCallSelected(call, {
               action: 'map',
@@ -424,6 +430,14 @@ export default function ComparisonPage() {
                       targetId: result.id,
                       targetName: result.name
                   });
+                  
+                  // Add to created workflows state
+                  setCreatedWorkflows(prev => {
+                      const newMap = new Map(prev);
+                      newMap.set(result.name, result.id);
+                      return newMap;
+                  });
+                  
                   successCount++;
               } catch (e) {
                   console.error(`Failed to create ${call.targetWorkflow}:`, e);
@@ -865,6 +879,7 @@ export default function ComparisonPage() {
                       onCreateAllMissing={handleBulkCreateMissingWorkflows}
                       isCreatingAllMissing={isCreatingAllMissing}
                       addedWorkflows={analysis?.addedWorkflows || []}
+                      createdWorkflows={createdWorkflows}
                     />
                   </TabsContent>
                    
@@ -936,13 +951,6 @@ export default function ComparisonPage() {
                 <Button variant="outline" onClick={() => setShowMergeSuccessDialog(false)} className="text-slate-300 border-slate-600 hover:bg-slate-800">
                     Close
                 </Button>
-                <Button
-                    onClick={() => setShowCredentialsDialog(true)}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                >
-                    <Key className="w-4 h-4 mr-2" />
-                    Create Staging Credentials
-                </Button>
                 {mergeResult?.prUrl ? (
                     <Button
                         onClick={() => window.open(mergeResult.prUrl, '_blank')}
@@ -986,11 +994,6 @@ export default function ComparisonPage() {
             </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <CreateStagingCredentialsDialog
-        open={showCredentialsDialog}
-        onOpenChange={setShowCredentialsDialog}
-      />
     </div>
   );
 }
