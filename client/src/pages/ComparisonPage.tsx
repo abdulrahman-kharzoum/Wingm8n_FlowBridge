@@ -39,6 +39,7 @@ import WorkflowCallsComparison from '@/components/WorkflowCallsComparison';
 import MetadataComparison from '@/components/MetadataComparison';
 import NodeChangesComparison from '@/components/NodeChangesComparison';
 import MergeDecisionSummary from '@/components/MergeDecisionSummary';
+import CreateStagingCredentialsDialog from '@/components/CreateStagingCredentialsDialog';
 import type { MergeDecision } from '@shared/types/workflow.types';
 import { toast } from 'sonner';
 
@@ -60,10 +61,12 @@ export default function ComparisonPage() {
     metadata: {},
   });
   const [showMergeSuccessDialog, setShowMergeSuccessDialog] = useState(false);
+  const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
   const [mergeResult, setMergeResult] = useState<{
       branchName: string;
       prUrl?: string;
   } | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Fetch comparison data
   // Use PR comparison if prNumber is present, otherwise fallback to branch comparison (or we can switch entirely)
@@ -204,6 +207,7 @@ export default function ComparisonPage() {
   const generateSuggestionMutation = trpc.n8n.generateGraphSuggestion.useMutation();
   const createWorkflowMutation = trpc.n8n.createWorkflowFromMapping.useMutation();
   const createWorkflowViaWebhookMutation = trpc.n8n.createWorkflowViaWebhook.useMutation();
+  const syncWorkflowsMutation = trpc.n8n.syncWorkflowsFromBranch.useMutation();
 
   const workflowsQuery = trpc.n8n.getWorkflows.useQuery(
 
@@ -221,6 +225,7 @@ export default function ComparisonPage() {
   
   const [suggestions, setSuggestions] = useState<Record<string, { status: 'mapped' | 'missing'; targetId?: string; targetName?: string }>>({});
   const [isCreatingWorkflow, setIsCreatingWorkflow] = useState<string | null>(null);
+  const [isCreatingAllMissing, setIsCreatingAllMissing] = useState(false);
 
   const handleWorkflowCallSelected = (call: any, action: 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string }) => {
        setMergeDecisions((prev) => ({
@@ -270,7 +275,7 @@ export default function ComparisonPage() {
         
         // Auto-populate merge decisions based on high-confidence suggestions
         const decisionUpdates: Record<string, any> = {};
-        Object.entries(result).forEach(([stagingId, suggestion]) => {
+        Object.entries(result).forEach(([stagingId, suggestion]: [string, any]) => {
             if (suggestion.status === 'mapped' && suggestion.targetId) {
                 // Find the source workflow for this target (we need to reverse lookup or use the call info)
                     // We need the source->target key. 
@@ -380,7 +385,7 @@ export default function ComparisonPage() {
           // Auto-link
           handleWorkflowCallSelected(call, {
               action: 'map',
-              targetId: result.id, 
+              targetId: result.id,
               targetName: result.name
           });
           
@@ -392,7 +397,57 @@ export default function ComparisonPage() {
       }
   };
 
+  const handleBulkCreateMissingWorkflows = async (missingCalls: any[]) => {
+      setIsCreatingAllMissing(true);
+      try {
+          let successCount = 0;
+          let failCount = 0;
 
+          // Process sequentially to avoid overwhelming the webhook/server
+          for (const call of missingCalls) {
+              try {
+                  // Determine name: use dev prefix if needed, or just clean name
+                  let nameToCreate = call.targetWorkflowName || call.targetWorkflow;
+                  if (!nameToCreate.startsWith('dev - ') && !nameToCreate.startsWith('staging - ')) {
+                      nameToCreate = `dev - ${nameToCreate}`;
+                  } else if (nameToCreate.startsWith('staging - ')) {
+                      nameToCreate = nameToCreate.replace('staging - ', 'dev - ');
+                  }
+
+                  const result = await createWorkflowViaWebhookMutation.mutateAsync({
+                      name: nameToCreate
+                  });
+
+                  // Auto-link immediately locally (though we'll refresh too)
+                  handleWorkflowCallSelected(call, {
+                      action: 'map',
+                      targetId: result.id,
+                      targetName: result.name
+                  });
+                  successCount++;
+              } catch (e) {
+                  console.error(`Failed to create ${call.targetWorkflow}:`, e);
+                  failCount++;
+              }
+          }
+          
+          if (successCount > 0) {
+            toast.success(`Created ${successCount} missing workflows.`);
+            // Refresh available workflows
+            await n8nUtils.getWorkflows.invalidate();
+          }
+          
+          if (failCount > 0) {
+              toast.error(`Failed to create ${failCount} workflows.`);
+          }
+
+      } catch (e: any) {
+          console.error(e);
+          toast.error(`Error during bulk creation: ${e.message}`);
+      } finally {
+          setIsCreatingAllMissing(false);
+      }
+  };
 
   const handleMetadataSelected = (filename: string, key: string, source: 'staging' | 'main' | null) => {
       const uniqueKey = `${filename}-${key}`;
@@ -463,6 +518,35 @@ export default function ComparisonPage() {
           const errorMessage = error.message || 'Failed to create PR.';
           toast.error(errorMessage);
       }
+  };
+
+  const handleSyncToN8n = async () => {
+    if (!selectedRepo || !mergeResult) return;
+    
+    setIsSyncing(true);
+    try {
+        const result = await syncWorkflowsMutation.mutateAsync({
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            branchName: mergeResult.branchName
+        });
+        
+        const successCount = result.results.filter((r: any) => r.status === 'success').length;
+        const failCount = result.results.length - successCount;
+
+        if (failCount === 0) {
+            toast.success(`Successfully synced all ${successCount} workflows to N8N!`);
+        } else {
+            toast.warning(`Synced ${successCount} workflows. ${failCount} failed.`);
+            console.error('Sync failures:', result.results.filter((r: any) => r.status === 'error'));
+        }
+        
+    } catch (error: any) {
+        console.error('Failed to sync to N8N:', error);
+        toast.error(error.message || 'Failed to sync to N8N');
+    } finally {
+        setIsSyncing(false);
+    }
   };
 
   if (!selectedRepo) {
@@ -778,6 +862,9 @@ export default function ComparisonPage() {
                       availableWorkflows={workflowsQuery.data || []}
                       onManualLink={handleManualLink}
                       onCreateViaWebhook={handleCreateWorkflowViaWebhook}
+                      onCreateAllMissing={handleBulkCreateMissingWorkflows}
+                      isCreatingAllMissing={isCreatingAllMissing}
+                      addedWorkflows={analysis?.addedWorkflows || []}
                     />
                   </TabsContent>
                    
@@ -849,6 +936,13 @@ export default function ComparisonPage() {
                 <Button variant="outline" onClick={() => setShowMergeSuccessDialog(false)} className="text-slate-300 border-slate-600 hover:bg-slate-800">
                     Close
                 </Button>
+                <Button
+                    onClick={() => setShowCredentialsDialog(true)}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                >
+                    <Key className="w-4 h-4 mr-2" />
+                    Create Staging Credentials
+                </Button>
                 {mergeResult?.prUrl ? (
                     <Button
                         onClick={() => window.open(mergeResult.prUrl, '_blank')}
@@ -872,9 +966,31 @@ export default function ComparisonPage() {
                         )}
                     </Button>
                 )}
+                 <Button
+                    onClick={handleSyncToN8n}
+                    disabled={isSyncing}
+                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                >
+                    {isSyncing ? (
+                        <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Syncing to N8N...
+                        </>
+                    ) : (
+                        <>
+                            <Workflow className="w-4 h-4 mr-2" />
+                            Sync to Production N8N
+                        </>
+                    )}
+                </Button>
             </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CreateStagingCredentialsDialog
+        open={showCredentialsDialog}
+        onOpenChange={setShowCredentialsDialog}
+      />
     </div>
   );
 }

@@ -5,11 +5,15 @@ export class N8nService {
   private baseUrl: string;
   private apiKey: string;
   private webhookUrl: string;
+  private mergeWebhookUrl: string;
+  private credentialWebhookUrl: string;
 
-  constructor(baseUrl: string, apiKey: string, webhookUrl: string) {
+  constructor(baseUrl: string, apiKey: string, webhookUrl: string, mergeWebhookUrl: string, credentialWebhookUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.apiKey = apiKey;
     this.webhookUrl = webhookUrl;
+    this.mergeWebhookUrl = mergeWebhookUrl;
+    this.credentialWebhookUrl = credentialWebhookUrl;
   }
 
 
@@ -87,6 +91,57 @@ export class N8nService {
       throw new Error('Failed to create workflow in N8N');
     }
   }
+
+  /**
+   * Sync a workflow to Production N8N via the Merge Webhook
+   * @param workflowData The full workflow JSON object
+   */
+  async syncWorkflowViaWebhook(workflowData: N8NWorkflow): Promise<void> {
+    try {
+      console.log(`[N8nService] Syncing workflow to production via webhook: ${this.mergeWebhookUrl}`);
+      
+      // The webhook expects the workflow JSON directly
+      await axios.post(this.mergeWebhookUrl, workflowData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-N8N-API-KEY': this.apiKey,
+        }
+      });
+
+      console.log(`[N8nService] Successfully synced workflow "${workflowData.name}"`);
+    } catch (error: any) {
+      console.error(`[N8nService] Failed to sync workflow "${workflowData.name}":`, error.message);
+      throw new Error(`Failed to sync workflow "${workflowData.name}" to production`);
+    }
+  }
+
+  /**
+   * Create a new credential in N8N via Webhook
+   * @param type The type of credential (supabase, respondio, postgres)
+   * @param data The credential data
+   */
+  async createCredentialViaWebhook(type: string, data: any): Promise<void> {
+    try {
+      console.log(`[N8nService] Creating credential (${type}) via webhook: ${this.credentialWebhookUrl}`);
+      
+      const payload = {
+        type,
+        data
+      };
+
+      await axios.post(this.credentialWebhookUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-N8N-API-KEY': this.apiKey,
+        }
+      });
+
+      console.log(`[N8nService] Successfully request credential creation for "${type}"`);
+    } catch (error: any) {
+      console.error(`[N8nService] Failed to create credential "${type}":`, error.message);
+      throw new Error(`Failed to create credential "${type}"`);
+    }
+  }
 }
 
 // Singleton or Factory
@@ -96,10 +151,12 @@ export function createN8nService(): N8nService {
   const baseUrl = process.env.N8N_BASE_URL || 'http://localhost:5678/api/v1';
   const apiKey = process.env.N8N_API_KEY || '';
   const webhookUrl = process.env.N8N_CREATE_WORKFLOW_WEBHOOK_URL || 'https://eranclikview.app.n8n.cloud/webhook/create_workflow';
+  const mergeWebhookUrl = process.env.N8N_MERGE_WEBHOOK_URL || 'https://n8n.wonderbeauties.com/webhook/merge_n8n_github';
+  const credentialWebhookUrl = process.env.N8N_CREATE_CREDENTIAL_WEBHOOK_URL || 'https://n8n.wonderbeauties.com/webhook/create_credential';
 
   if (!apiKey) {
       console.warn('N8N_API_KEY is not set. N8N integration will fail.');
   }
 
-  return new N8nService(baseUrl, apiKey, webhookUrl);
+  return new N8nService(baseUrl, apiKey, webhookUrl, mergeWebhookUrl, credentialWebhookUrl);
 }

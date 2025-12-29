@@ -39,6 +39,7 @@ export interface PRAnalysisResult {
     secrets: string[];
     metadata: any[];
     nodeChanges: any[];
+    addedWorkflows?: Array<{ name: string; id?: string; filename: string }>;
   };
 }
 
@@ -212,6 +213,7 @@ export class PRAnalyzerService {
     const credentials = new Map();
     const domains = new Map();
     const workflowCalls = new Map();
+    const addedWorkflows: Array<{ name: string; id?: string; filename: string }> = [];
 
     // Helper to normalize webhook keys for comparison
     const getDomainKey = (domain: any) => {
@@ -227,7 +229,35 @@ export class PRAnalyzerService {
     const metadataDiffs: any[] = [];
     const nodeDiffs: any[] = [];
 
+    // 0. Build a Workflow Registry (ID -> Name) from all analyzed files
+    // This helps us resolve "Stale" cached names in Workflow Calls
+    const workflowRegistry = new Map<string, string>(); // ID -> Real Name
+    
+    // Also include main workflows if available? 
+    // We don't have IDs for all main workflows easily unless we fetched them all.
+    // But we have `credentialRegistry` which came from main workflows... 
+    // We should ideally have passed the main workflows list or a map of them.
+    // For now, let's at least register the files IN THIS PR (Base and Head).
+    
+    results.forEach(res => {
+        if (res.base?.content?.id) {
+            workflowRegistry.set(res.base.content.id, res.base.content.name);
+        }
+        if (res.head?.content?.id) {
+            workflowRegistry.set(res.head.content.id, res.head.content.name);
+        }
+    });
+
     for (const result of results) {
+        // Collect Added Workflows
+        if (result.status === 'added' && result.head?.content) {
+            addedWorkflows.push({
+                name: result.head.content.name || result.filename,
+                id: result.head.content.id, // Only if exposed in root, otherwise undefined
+                filename: result.filename
+            });
+        }
+
         // Compare Metadata and Nodes if both versions exist
         if (result.base?.content && result.head?.content) {
             // compareMetadata(staging, main) -> compareMetadata(head, base)
@@ -533,6 +563,11 @@ export class PRAnalyzerService {
       // Main (Base)
       if (result.base?.workflowCalls && result.base.workflowCalls.calls) {
         result.base.workflowCalls.calls.forEach((call: any) => {
+          // Resolve Stale Name
+          if (call.targetWorkflow && workflowRegistry.has(call.targetWorkflow)) {
+             call.targetWorkflowName = workflowRegistry.get(call.targetWorkflow);
+          }
+
           const key = `${call.sourceWorkflow}-${call.targetWorkflow}`;
           if (!workflowCalls.has(key)) {
             workflowCalls.set(key, { ...call, inMain: true, inStaging: false, files: [result.filename] });
@@ -548,10 +583,21 @@ export class PRAnalyzerService {
       // Staging (Head)
       if (result.head?.workflowCalls && result.head.workflowCalls.calls) {
         result.head.workflowCalls.calls.forEach((call: any) => {
+           // Resolve Stale Name
+           if (call.targetWorkflow && workflowRegistry.has(call.targetWorkflow)) {
+              console.log(`[PR Analyzer] Resolved stale workflow name for call target ${call.targetWorkflow}: "${call.targetWorkflowName}" -> "${workflowRegistry.get(call.targetWorkflow)}"`);
+              call.targetWorkflowName = workflowRegistry.get(call.targetWorkflow);
+           }
+
           const key = `${call.sourceWorkflow}-${call.targetWorkflow}`;
           if (workflowCalls.has(key)) {
             const existing = workflowCalls.get(key);
             existing.inStaging = true;
+            // Also update Name in existing entry if this call is fresher/better?
+            if (call.targetWorkflowName && existing.targetWorkflowName !== call.targetWorkflowName) {
+                existing.targetWorkflowName = call.targetWorkflowName; // Take the latest/resolved name
+            }
+
             if (!existing.files.includes(result.filename)) {
                 existing.files.push(result.filename);
             }
@@ -627,6 +673,7 @@ export class PRAnalyzerService {
       secrets: Array.from(new Set(secrets)), // Deduplicate secrets
       metadata: metadataDiffs,
       nodeChanges: nodeDiffs,
+      addedWorkflows
     };
   }
 }

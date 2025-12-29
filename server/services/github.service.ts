@@ -58,6 +58,7 @@ export class GitHubService {
     this.octokit = new Octokit({
       auth: accessToken,
       request: {
+        timeout: 60000, // 60s timeout
         headers: {
           'If-None-Match': '', // Prevent caching
           'Cache-Control': 'no-cache',

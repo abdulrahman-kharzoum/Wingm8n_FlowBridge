@@ -38,6 +38,9 @@ interface WorkflowCallsComparisonProps {
   availableWorkflows?: Array<{ id: string; name: string }>; // For manual mapping dropdown
   onManualLink?: (call: WorkflowCall, targetId: string, targetName: string) => void;
   onCreateViaWebhook?: (call: WorkflowCall, name: string) => void;
+  onCreateAllMissing?: (missingCalls: WorkflowCall[]) => void;
+  isCreatingAllMissing?: boolean;
+  addedWorkflows?: Array<{ name: string; id?: string; filename: string }>;
 }
 
 const ChainNode = ({ name, id, type = 'default' }: { name: string; id?: string; type?: 'default' | 'source' | 'target' | 'new' }) => {
@@ -75,12 +78,20 @@ export default function WorkflowCallsComparison({
   isCreatingWorkflow,
   availableWorkflows = [],
   onManualLink,
-  onCreateViaWebhook
+  onCreateViaWebhook,
+  onCreateAllMissing,
+  isCreatingAllMissing,
+  addedWorkflows = []
 }: WorkflowCallsComparisonProps) {
     const [resolvingCall, setResolvingCall] = useState<WorkflowCall | null>(null);
     const [resolveMode, setResolveMode] = useState<'manual' | 'create'>('create');
     const [manualId, setManualId] = useState('');
     const [manualName, setManualName] = useState('');
+    
+    // Confirmation Dialog State
+    const [isConfirmingCreate, setIsConfirmingCreate] = useState(false);
+    const [workflowsToCreate, setWorkflowsToCreate] = useState<Array<{name: string, source: string, originalCall?: WorkflowCall}>>([]);
+
     const relationships = useMemo(() => {
         const groups: Record<string, typeof workflowCalls> = {};
         workflowCalls.forEach(call => {
@@ -93,6 +104,96 @@ export default function WorkflowCallsComparison({
     }, [workflowCalls]);
 
     const [activeCalls, setActiveCalls] = useState<Set<string>>(new Set());
+
+    const missingCalls = useMemo(() => {
+        // Find calls that are in Staging
+        const missing: WorkflowCall[] = [];
+        const seenTargets = new Set<string>();
+
+        workflowCalls.forEach((call: any) => {
+            if (call.inStaging) {
+                const targetKey = call.targetWorkflow; // Usually ID (or Name if ID not found)
+                if (seenTargets.has(targetKey)) return;
+
+                // Determine the expected Production Name
+                // If staging name is "staging - X", prod name should be "dev - X"
+                let stagingName = call.targetWorkflowName || targetKey;
+                let expectedProdName = stagingName;
+
+                if (stagingName.startsWith('staging - ')) {
+                    expectedProdName = stagingName.replace('staging - ', 'dev - ');
+                } else if (!stagingName.startsWith('dev - ')) {
+                    expectedProdName = `dev - ${stagingName}`;
+                }
+
+                // Check if exists in Prod (Main)
+                const existsInProd = availableWorkflows.some(w => w.name === expectedProdName);
+                
+                // Check if exists in Added Workflows (New in PR)
+                // We match loosely by name since ID might not be known yet or strictly by Name if available
+                const existsInAdded = addedWorkflows.some(w => w.name === expectedProdName || w.name === stagingName);
+
+                // Also check if mapped already
+                const isMapped = suggestions?.[targetKey]?.status === 'mapped';
+
+                if (!existsInProd && !existsInAdded && !isMapped) {
+                    missing.push(call);
+                    seenTargets.add(targetKey);
+                }
+            }
+        });
+        return missing;
+    }, [workflowCalls, availableWorkflows, suggestions, addedWorkflows]);
+
+    // Calculate actual missing workflows to CREATE (including those from Added Workflows that aren't in Prod yet)
+    // The user wants to see "Create Missing" for workflows that are detected as NEW in this PR (Added Files)
+    // AND missing targets from calls that don't match anything.
+    // Actually, "Missing" implies they need to be created.
+    // Added workflows ARE the source of truth for what needs to be created if they are new files.
+    
+    // Combines unique missing items from Call Graph + Added Workflows
+    const allMissingWorkflowsToCreate = useMemo(() => {
+        const toCreate: Array<{ name: string; source: string; originalCall?: WorkflowCall }> = [];
+        const seenNames = new Set<string>();
+        
+        // 1. From Added Workflows (High Confidence)
+        addedWorkflows.forEach(w => {
+            // Check if already exists in Prod (unlikely if status is added, but possible if name collision)
+            // Or if we want to rename it to 'dev - ...' ?
+            // User requirement: "get the name of these files from the json inside of them"
+            let name = w.name;
+            // Apply naming convention if needed? Usually we want to map Staging Name -> Dev Name
+             if (name.startsWith('staging - ')) {
+                name = name.replace('staging - ', 'dev - ');
+            } else if (!name.startsWith('dev - ')) {
+                 name = `dev - ${name}`;
+            }
+
+            if (!availableWorkflows.some(aw => aw.name === name)) {
+                 if (!seenNames.has(name)) {
+                     toCreate.push({ name, source: 'New File in PR' });
+                     seenNames.add(name);
+                 }
+            }
+        });
+
+        // 2. From Missing Calls (Inferred)
+        missingCalls.forEach(call => {
+             let name = call.targetWorkflowName || call.targetWorkflow;
+             if (name.startsWith('staging - ')) {
+                name = name.replace('staging - ', 'dev - ');
+            } else if (!name.startsWith('dev - ')) {
+                 name = `dev - ${name}`;
+            }
+            
+            if (!seenNames.has(name) && !availableWorkflows.some(aw => aw.name === name)) {
+                toCreate.push({ name, source: 'Missing Call Target', originalCall: call });
+                seenNames.add(name);
+            }
+        });
+
+        return toCreate;
+    }, [addedWorkflows, missingCalls, availableWorkflows]);
 
     useEffect(() => {
         const initial = new Set<string>();
@@ -188,20 +289,39 @@ export default function WorkflowCallsComparison({
                     Visualize and manage workflow execution chains
                   </CardDescription>
                 </div>
-                {onGenerateSuggestions && (
-                    <Button 
-                        onClick={onGenerateSuggestions} 
-                        disabled={isGeneratingSuggestions}
-                        className="bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20"
-                    >
-                        {isGeneratingSuggestions ? (
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                            <Wand2 className="w-4 h-4 mr-2" />
-                        )}
-                        Suggest Graph
-                    </Button>
-                )}
+                <div className="flex gap-2">
+                    {allMissingWorkflowsToCreate.length > 0 && onCreateAllMissing && (
+                        <Button
+                            onClick={() => {
+                                setWorkflowsToCreate(allMissingWorkflowsToCreate);
+                                setIsConfirmingCreate(true);
+                            }}
+                            disabled={isCreatingAllMissing}
+                            className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20"
+                        >
+                             {isCreatingAllMissing ? (
+                                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            ) : (
+                                <PlusCircle className="w-4 h-4 mr-2" />
+                            )}
+                            Create {allMissingWorkflowsToCreate.length} Missing
+                        </Button>
+                    )}
+                    {onGenerateSuggestions && (
+                        <Button
+                            onClick={onGenerateSuggestions}
+                            disabled={isGeneratingSuggestions}
+                            className="bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20"
+                        >
+                            {isGeneratingSuggestions ? (
+                                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            ) : (
+                                <Wand2 className="w-4 h-4 mr-2" />
+                            )}
+                            Suggest Graph
+                        </Button>
+                    )}
+                </div>
             </div>
         </CardHeader>
         <CardContent>
@@ -386,6 +506,36 @@ export default function WorkflowCallsComparison({
                                                                             </span>
                                                                         </SelectItem>
                                                                     ))}
+                                                                    {/* Include Added Workflows as options */}
+                                                                    {addedWorkflows.map((w, idx) => {
+                                                                         // If it has an ID, use it, otherwise use Name as logic
+                                                                         // But for the select, we usually need a unique value.
+                                                                         // If ID is missing, we might not be able to "Link" to it properly yet until created?
+                                                                         // But user asked to include them.
+                                                                         // Let's assume we can link by name or temporary ID? 
+                                                                         // Ideally we map to what it WILL be. 
+                                                                         
+                                                                         // Actually, "New in PR" workflows are not yet in Production (Main), so they don't have a prod ID.
+                                                                         // They will be created.
+                                                                         // So they shouldn't necessarily be in the "Existing Production Workflows" list unless we treat them as "Pending Creation".
+                                                                         // But user said: "update the dropdonw list ... to use the new added workflows to be mapped".
+                                                                         // This implies mapping the Staging Call -> The New Workflow File (which will become Prod).
+                                                                         
+                                                                         const val = w.id || `pending-${w.name}`;
+                                                                         if (availableWorkflows.some(aw => aw.id === val)) return null;
+
+                                                                         return (
+                                                                             <SelectItem key={`added-${idx}`} value={val}>
+                                                                                <span className="flex flex-col text-left">
+                                                                                    <span className="flex items-center gap-2">
+                                                                                        {w.name}
+                                                                                        <Badge variant="outline" className="text-[8px] h-3 px-1 border-emerald-500/30 text-emerald-400">New in PR</Badge>
+                                                                                    </span>
+                                                                                    <span className="text-[10px] text-slate-500 font-mono">{w.filename}</span>
+                                                                                </span>
+                                                                            </SelectItem>
+                                                                         );
+                                                                    })}
                                                                     {/* Include current ID if not in list */}
                                                                     {!availableWorkflows.some(w => w.id === target) && (
                                                                         <SelectItem value={target}>{callObj.targetWorkflowName || target} (Current)</SelectItem>
@@ -558,6 +708,70 @@ export default function WorkflowCallsComparison({
                         Create Workflow
                     </Button>
                 )}
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Confirmation Dialog for Bulk Create */}
+      <Dialog open={isConfirmingCreate} onOpenChange={setIsConfirmingCreate}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+            <DialogHeader>
+                <DialogTitle>Create Missing Workflows</DialogTitle>
+                <DialogDescription className="text-slate-400">
+                    The following {workflowsToCreate.length} workflows will be created in Production.
+                </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-4 space-y-2 max-h-[60vh] overflow-y-auto">
+                {workflowsToCreate.map((wf, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 rounded bg-slate-800 border border-slate-700">
+                        <div className="flex flex-col gap-0.5">
+                            <span className="font-medium text-sm text-white">{wf.name}</span>
+                            <span className="text-[10px] text-slate-500">{wf.source}</span>
+                        </div>
+                        {wf.source === 'New File in PR' ? (
+                            <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-400 bg-emerald-500/10">Added File</Badge>
+                        ) : (
+                             <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400 bg-amber-500/10">Call Graph</Badge>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsConfirmingCreate(false)} className="border-slate-600 text-slate-300">
+                    Cancel
+                </Button>
+                <Button 
+                    onClick={() => {
+                        // Extract just the calls or names needed for the handler
+                        // The original handler expects missingCalls (calls)
+                        // But we might be creating from Added Files which don't have a call object.
+                        // We need to adapt the handler or pass a mixed list?
+                        
+                        // Current page handler: handleBulkCreateMissingWorkflows(missingCalls: any[])
+                        // It iterates and calls createWorkflowViaWebhookMutation
+                        
+                        // We can construct dummy "calls" for the Added Files so the handler works, 
+                        // or better, pass the list of items to create directly if we update the handler interface.
+                        
+                        // For now, let's map back to the expected format.
+                        // The handler uses: call.targetWorkflowName || call.targetWorkflow
+                        
+                        const payload = workflowsToCreate.map(w => ({
+                            targetWorkflowName: w.name,
+                            targetWorkflow: w.name, // Temporary ID
+                            // If it was from a real call, include it?
+                            ...w.originalCall
+                        }));
+                        
+                        onCreateAllMissing?.(payload as any);
+                        setIsConfirmingCreate(false);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                    Confirm & Create
+                </Button>
             </DialogFooter>
         </DialogContent>
       </Dialog>

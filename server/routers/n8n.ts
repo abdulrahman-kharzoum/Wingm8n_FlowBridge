@@ -62,6 +62,44 @@ export const n8nRouter = router({
         return await n8nService.createWorkflow(payload);
     }),
 
+  syncWorkflowsFromBranch: publicProcedure
+    .input(z.object({
+        owner: z.string(),
+        repo: z.string(),
+        branchName: z.string()
+    }))
+    .mutation(async ({ ctx, input }) => {
+        try {
+            const token = (ctx as any).user?.githubToken;
+             if (!token) {
+                 throw new Error("Authentication required to access GitHub");
+             }
+             
+             const ghService = new GitHubService(token);
+             
+             console.log(`[syncWorkflowsFromBranch] Fetching workflows from branch ${input.branchName}`);
+             const branchWorkflows = await fetchBranchWorkflows(ghService, input.owner, input.repo, input.branchName);
+             console.log(`[syncWorkflowsFromBranch] Found ${branchWorkflows.workflows.length} workflows`);
+
+             const results = [];
+             for (const workflow of branchWorkflows.workflows) {
+                 console.log(`[syncWorkflowsFromBranch] Syncing workflow: ${workflow.content.name}`);
+                 try {
+                     await n8nService.syncWorkflowViaWebhook(workflow.content);
+                     results.push({ name: workflow.content.name, status: 'success' });
+                 } catch (e: any) {
+                     console.error(`[syncWorkflowsFromBranch] Failed to sync ${workflow.content.name}:`, e);
+                     results.push({ name: workflow.content.name, status: 'error', message: e.message });
+                 }
+             }
+
+             return { success: true, results };
+        } catch (error: any) {
+            console.error('[syncWorkflowsFromBranch] Error:', error);
+            throw new Error(error.message || 'Failed to sync workflows from branch');
+        }
+    }),
+
   createWorkflowFromMapping: publicProcedure
     .input(z.object({
         owner: z.string(),
@@ -80,7 +118,7 @@ export const n8nRouter = router({
                  throw new Error("Authentication required to access GitHub");
              }
              
-             const ghService = new GitHubService(token); 
+             const ghService = new GitHubService(token);
              
              // Get PR details to find head ref
              console.log(`[createWorkflowFromMapping] Fetching PR ${input.prNumber} for ${input.owner}/${input.repo}`);
@@ -114,6 +152,15 @@ export const n8nRouter = router({
              console.error('[createWorkflowFromMapping] Error:', error);
              throw new Error(error.message || 'Failed to create workflow from mapping');
          }
+    }),
+
+  createStagingCredential: publicProcedure
+    .input(z.object({
+        type: z.enum(['supabase', 'respondio', 'postgres']),
+        data: z.record(z.string(), z.any())
+    }))
+    .mutation(async ({ input }) => {
+        return await n8nService.createCredentialViaWebhook(input.type, input.data);
     }),
 
   generateGraphSuggestion: publicProcedure
