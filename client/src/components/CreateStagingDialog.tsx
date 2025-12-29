@@ -30,11 +30,12 @@ import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Key, Database, MessageSquare, Loader2, CheckCircle } from 'lucide-react';
+import { Key, Database, MessageSquare, Loader2, CheckCircle, ArrowRight, Server, Play } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
 
-interface CreateStagingCredentialsDialogProps {
+interface CreateStagingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -83,50 +84,245 @@ type PostgresFormData = z.infer<typeof postgresSchema>;
 
 // --- Components ---
 
-export default function CreateStagingCredentialsDialog({
+export default function CreateStagingDialog({
   open,
   onOpenChange,
-}: CreateStagingCredentialsDialogProps) {
-  const [activeTab, setActiveTab] = useState('supabase');
+}: CreateStagingDialogProps) {
+  const [activeStep, setActiveStep] = useState(1);
+  const [createdCredentials, setCreatedCredentials] = useState<Record<string, string>>({}); // type -> id
+  const [isProvisioning, setIsProvisioning] = useState(false);
+  const [provisionResults, setProvisionResults] = useState<any[]>([]);
+
+  const provisionMutation = trpc.n8n.createStagingEnvironment.useMutation();
+
+  const handleCredentialCreated = (type: string, id: string) => {
+    setCreatedCredentials(prev => ({ ...prev, [type]: id }));
+    toast.success(`${type} credential ready for staging.`);
+  };
+
+  const handleProvision = async () => {
+    if (Object.keys(createdCredentials).length === 0) {
+        toast.error("Please create at least one credential first.");
+        return;
+    }
+
+    setIsProvisioning(true);
+    setActiveStep(3); // Move to processing step
+    try {
+        const result = await provisionMutation.mutateAsync({
+            credentials: createdCredentials
+        });
+        setProvisionResults(result.results);
+        toast.success("Staging environment provisioned successfully!");
+    } catch (error: any) {
+        toast.error(`Provisioning failed: ${error.message}`);
+    } finally {
+        setIsProvisioning(false);
+    }
+  };
+
+  const reset = () => {
+      setActiveStep(1);
+      setCreatedCredentials({});
+      setProvisionResults([]);
+      setIsProvisioning(false);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl bg-slate-900 border-slate-700 text-white max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={(v) => {
+        if (!v) reset();
+        onOpenChange(v);
+    }}>
+      <DialogContent className="max-w-3xl bg-slate-900 border-slate-700 text-white max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <Key className="w-5 h-5 text-accent" />
-            Create Staging Credentials
+            <Server className="w-5 h-5 text-accent" />
+            Create Staging Environment
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            Configure new credentials for your staging environment. These will be created in N8N.
+            Setup a fresh staging environment from production workflows.
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-          <TabsList className="grid w-full grid-cols-3 bg-slate-800 border border-slate-700">
-            <TabsTrigger value="supabase" className="data-[state=active]:bg-accent data-[state=active]:text-accent-foreground">Supabase</TabsTrigger>
-            <TabsTrigger value="respondio" className="data-[state=active]:bg-accent data-[state=active]:text-accent-foreground">Respond.io</TabsTrigger>
-            <TabsTrigger value="postgres" className="data-[state=active]:bg-accent data-[state=active]:text-accent-foreground">Postgres</TabsTrigger>
-          </TabsList>
+        {/* Wizard Steps */}
+        <div className="flex items-center justify-between px-8 py-4 border-b border-slate-800">
+            <div className={`flex flex-col items-center ${activeStep >= 1 ? 'text-accent' : 'text-slate-500'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 mb-1 ${activeStep >= 1 ? 'border-accent bg-accent/20' : 'border-slate-600'}`}>1</div>
+                <span className="text-xs">Credentials</span>
+            </div>
+            <div className={`flex-1 h-0.5 mx-4 ${activeStep >= 2 ? 'bg-accent' : 'bg-slate-700'}`} />
+            <div className={`flex flex-col items-center ${activeStep >= 2 ? 'text-accent' : 'text-slate-500'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 mb-1 ${activeStep >= 2 ? 'border-accent bg-accent/20' : 'border-slate-600'}`}>2</div>
+                <span className="text-xs">Review</span>
+            </div>
+            <div className={`flex-1 h-0.5 mx-4 ${activeStep >= 3 ? 'bg-accent' : 'bg-slate-700'}`} />
+            <div className={`flex flex-col items-center ${activeStep >= 3 ? 'text-accent' : 'text-slate-500'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 mb-1 ${activeStep >= 3 ? 'border-accent bg-accent/20' : 'border-slate-600'}`}>3</div>
+                <span className="text-xs">Provision</span>
+            </div>
+        </div>
 
-          <TabsContent value="supabase" className="mt-4">
-            <SupabaseForm onSuccess={() => onOpenChange(false)} />
-          </TabsContent>
+        <div className="mt-4">
+            {activeStep === 1 && (
+                <StepCredentials 
+                    createdCredentials={createdCredentials} 
+                    onCredentialCreated={handleCredentialCreated}
+                    onNext={() => setActiveStep(2)}
+                />
+            )}
 
-          <TabsContent value="respondio" className="mt-4">
-            <RespondIoForm onSuccess={() => onOpenChange(false)} />
-          </TabsContent>
+            {activeStep === 2 && (
+                <div className="space-y-6 py-4">
+                    <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
+                        <h3 className="text-lg font-medium mb-2 flex items-center gap-2">
+                            <Key className="w-4 h-4 text-accent" />
+                            Staging Credentials Ready
+                        </h3>
+                        <div className="space-y-2">
+                            {Object.entries(createdCredentials).map(([type, id]) => (
+                                <div key={type} className="flex items-center justify-between p-2 bg-slate-900 rounded border border-slate-800">
+                                    <span className="capitalize text-slate-300">{type}</span>
+                                    <Badge variant="outline" className="text-green-400 border-green-500/30 bg-green-500/10">
+                                        <CheckCircle className="w-3 h-3 mr-1" />
+                                        Created
+                                    </Badge>
+                                </div>
+                            ))}
+                            {Object.keys(createdCredentials).length === 0 && (
+                                <p className="text-sm text-slate-500 italic">No new credentials created. Production credentials will be kept (or process might fail if specific ones are required).</p>
+                            )}
+                        </div>
+                    </div>
 
-          <TabsContent value="postgres" className="mt-4">
-            <PostgresForm onSuccess={() => onOpenChange(false)} />
-          </TabsContent>
-        </Tabs>
+                    <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
+                        <h3 className="text-lg font-medium mb-2 flex items-center gap-2">
+                            <Play className="w-4 h-4 text-accent" />
+                            Process Overview
+                        </h3>
+                        <ul className="list-disc list-inside text-sm text-slate-400 space-y-1">
+                            <li>Fetch all "dev" workflows from Production.</li>
+                            <li>Rename them to "staging - [Name]".</li>
+                            <li>Replace credentials with the new Staging ones configured above.</li>
+                            <li>Create/Overwrite workflows in N8N.</li>
+                        </ul>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setActiveStep(1)}>Back</Button>
+                        <Button onClick={handleProvision} className="bg-accent hover:bg-accent-dark text-accent-foreground">
+                            Start Provisioning
+                            <ArrowRight className="w-4 h-4 ml-2" />
+                        </Button>
+                    </DialogFooter>
+                </div>
+            )}
+
+            {activeStep === 3 && (
+                <div className="space-y-6 py-4">
+                    {isProvisioning ? (
+                        <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                            <Loader2 className="w-12 h-12 text-accent animate-spin" />
+                            <div className="text-center">
+                                <h3 className="text-lg font-medium">Provisioning Staging Environment...</h3>
+                                <p className="text-slate-400 text-sm">Fetching workflows, replacing credentials, and deploying.</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 text-green-400 mb-4">
+                                <CheckCircle className="w-6 h-6" />
+                                <h3 className="text-xl font-medium">Provisioning Complete</h3>
+                            </div>
+                            
+                            <div className="border border-slate-700 rounded-lg overflow-hidden">
+                                <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 font-medium text-sm">
+                                    Results ({provisionResults.length} workflows)
+                                </div>
+                                <div className="max-h-[300px] overflow-y-auto p-2 space-y-1 bg-slate-900">
+                                    {provisionResults.map((res: any, idx: number) => (
+                                        <div key={idx} className="flex items-center justify-between text-sm p-2 hover:bg-slate-800/50 rounded">
+                                            <span className="text-slate-300">{res.originalName} → {res.stagingName}</span>
+                                            {res.status === 'success' ? (
+                                                <Badge className="bg-green-500/20 text-green-400 border-green-500/50">Success</Badge>
+                                            ) : (
+                                                <Badge className="bg-red-500/20 text-red-400 border-red-500/50">Failed</Badge>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <DialogFooter>
+                                <Button onClick={() => onOpenChange(false)} className="bg-accent hover:bg-accent-dark text-accent-foreground">
+                                    Done
+                                </Button>
+                            </DialogFooter>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function SupabaseForm({ onSuccess }: { onSuccess: () => void }) {
+function StepCredentials({ createdCredentials, onCredentialCreated, onNext }: { 
+    createdCredentials: Record<string, string>, 
+    onCredentialCreated: (type: string, id: string) => void,
+    onNext: () => void
+}) {
+    const [activeTab, setActiveTab] = useState('supabase');
+
+    return (
+        <div className="space-y-4">
+            <p className="text-sm text-slate-400">
+                Configure new credentials for the staging environment. You can create multiple.
+                Once created, they will be used to replace production credentials in the next step.
+            </p>
+
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
+                <TabsList className="grid w-full grid-cols-3 bg-slate-800 border border-slate-700">
+                    <TabsTrigger value="supabase" className="relative data-[state=active]:bg-accent data-[state=active]:text-accent-foreground">
+                        Supabase
+                        {createdCredentials['supabase'] && <div className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full" />}
+                    </TabsTrigger>
+                    <TabsTrigger value="respondio" className="relative data-[state=active]:bg-accent data-[state=active]:text-accent-foreground">
+                        Respond.io
+                        {createdCredentials['respondio'] && <div className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full" />}
+                    </TabsTrigger>
+                    <TabsTrigger value="postgres" className="relative data-[state=active]:bg-accent data-[state=active]:text-accent-foreground">
+                        Postgres
+                        {createdCredentials['postgres'] && <div className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full" />}
+                    </TabsTrigger>
+                </TabsList>
+
+                <div className="mt-4 p-4 border border-slate-700 rounded-lg bg-slate-800/30">
+                    <TabsContent value="supabase" className="mt-0">
+                        <SupabaseForm onSuccess={(id) => onCredentialCreated('supabase', id)} />
+                    </TabsContent>
+
+                    <TabsContent value="respondio" className="mt-0">
+                        <RespondIoForm onSuccess={(id) => onCredentialCreated('respondio', id)} />
+                    </TabsContent>
+
+                    <TabsContent value="postgres" className="mt-0">
+                        <PostgresForm onSuccess={(id) => onCredentialCreated('postgres', id)} />
+                    </TabsContent>
+                </div>
+            </Tabs>
+
+            <div className="flex justify-end pt-4">
+                <Button onClick={onNext} className="bg-slate-700 hover:bg-slate-600 text-white">
+                    Next: Review & Provision
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+function SupabaseForm({ onSuccess }: { onSuccess: (id: string) => void }) {
   const mutation = trpc.n8n.createStagingCredential.useMutation();
   const form = useForm<z.infer<typeof supabaseSchema>>({
     resolver: zodResolver(supabaseSchema),
@@ -142,7 +338,7 @@ function SupabaseForm({ onSuccess }: { onSuccess: () => void }) {
 
   const onSubmit = async (data: z.infer<typeof supabaseSchema>) => {
     try {
-      await mutation.mutateAsync({
+      const result: any = await mutation.mutateAsync({
         type: 'supabase',
         data: {
             host: data.host,
@@ -150,8 +346,9 @@ function SupabaseForm({ onSuccess }: { onSuccess: () => void }) {
             allowedDomains: data.allowedDomainType === 'all' ? '*' : data.allowedDomainType === 'none' ? '' : data.specificAllowedDomain
         },
       });
-      toast.success('Supabase credential creation requested');
-      onSuccess();
+      // Assuming result has ID, otherwise we can't track it effectively for replacement if we need strict ID mapping
+      // But for now we just mark it as done. If result has ID, pass it.
+      onSuccess(result?.id || 'created'); 
     } catch (error: any) {
       toast.error(`Failed to create credential: ${error.message}`);
     }
@@ -240,18 +437,16 @@ function SupabaseForm({ onSuccess }: { onSuccess: () => void }) {
           />
         )}
 
-        <DialogFooter className="pt-4">
-          <Button type="submit" disabled={mutation.isPending} className="bg-accent hover:bg-accent-dark text-accent-foreground">
+        <Button type="submit" disabled={mutation.isPending} className="w-full bg-accent hover:bg-accent-dark text-accent-foreground">
             {mutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Create Supabase Credential
-          </Button>
-        </DialogFooter>
+        </Button>
       </form>
     </Form>
   );
 }
 
-function RespondIoForm({ onSuccess }: { onSuccess: () => void }) {
+function RespondIoForm({ onSuccess }: { onSuccess: (id: string) => void }) {
   const mutation = trpc.n8n.createStagingCredential.useMutation();
   const form = useForm<z.infer<typeof respondIoSchema>>({
     resolver: zodResolver(respondIoSchema),
@@ -266,15 +461,14 @@ function RespondIoForm({ onSuccess }: { onSuccess: () => void }) {
 
   const onSubmit = async (data: z.infer<typeof respondIoSchema>) => {
     try {
-      await mutation.mutateAsync({
+      const result: any = await mutation.mutateAsync({
         type: 'respondio',
         data: {
              apiKey: data.apiKey,
              allowedDomains: data.allowedDomainType === 'all' ? '*' : data.allowedDomainType === 'none' ? '' : data.specificAllowedDomain
         },
       });
-      toast.success('Respond.io credential creation requested');
-      onSuccess();
+      onSuccess(result?.id || 'created');
     } catch (error: any) {
       toast.error(`Failed to create credential: ${error.message}`);
     }
@@ -350,18 +544,16 @@ function RespondIoForm({ onSuccess }: { onSuccess: () => void }) {
           />
         )}
 
-        <DialogFooter className="pt-4">
-          <Button type="submit" disabled={mutation.isPending} className="bg-accent hover:bg-accent-dark text-accent-foreground">
+        <Button type="submit" disabled={mutation.isPending} className="w-full bg-accent hover:bg-accent-dark text-accent-foreground">
             {mutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Create Respond.io Credential
-          </Button>
-        </DialogFooter>
+        </Button>
       </form>
     </Form>
   );
 }
 
-function PostgresForm({ onSuccess }: { onSuccess: () => void }) {
+function PostgresForm({ onSuccess }: { onSuccess: (id: string) => void }) {
   const mutation = trpc.n8n.createStagingCredential.useMutation();
   
   const form = useForm<PostgresFormData>({
@@ -387,12 +579,11 @@ function PostgresForm({ onSuccess }: { onSuccess: () => void }) {
 
   const onSubmit = async (data: PostgresFormData) => {
     try {
-      await mutation.mutateAsync({
+      const result: any = await mutation.mutateAsync({
         type: 'postgres',
         data: data,
       });
-      toast.success('Postgres credential creation requested');
-      onSuccess();
+      onSuccess(result?.id || 'created');
     } catch (error: any) {
       toast.error(`Failed to create credential: ${error.message}`);
     }
@@ -422,11 +613,11 @@ function PostgresForm({ onSuccess }: { onSuccess: () => void }) {
                 <FormItem>
                 <FormLabel>Port</FormLabel>
                 <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
+                    <Input 
+                      type="number" 
+                      {...field} 
                       onChange={e => field.onChange(e.target.valueAsNumber)}
-                      className="bg-slate-800 border-slate-700"
+                      className="bg-slate-800 border-slate-700" 
                     />
                 </FormControl>
                 <FormMessage />
@@ -486,11 +677,11 @@ function PostgresForm({ onSuccess }: { onSuccess: () => void }) {
                 <FormItem>
                 <FormLabel>Max Connections</FormLabel>
                 <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
+                    <Input 
+                      type="number" 
+                      {...field} 
                       onChange={e => field.onChange(e.target.valueAsNumber)}
-                      className="bg-slate-800 border-slate-700"
+                      className="bg-slate-800 border-slate-700" 
                     />
                 </FormControl>
                 <FormMessage />
@@ -586,11 +777,11 @@ function PostgresForm({ onSuccess }: { onSuccess: () => void }) {
                         <FormItem>
                         <FormLabel>SSH Port</FormLabel>
                         <FormControl>
-                            <Input
-                              type="number"
-                              {...field}
+                            <Input 
+                              type="number" 
+                              {...field} 
                               onChange={e => field.onChange(e.target.valueAsNumber)}
-                              className="bg-slate-800 border-slate-700"
+                              className="bg-slate-800 border-slate-700" 
                             />
                         </FormControl>
                         <FormMessage />
@@ -632,12 +823,10 @@ function PostgresForm({ onSuccess }: { onSuccess: () => void }) {
             </div>
         )}
 
-        <DialogFooter className="pt-4">
-          <Button type="submit" disabled={mutation.isPending} className="bg-accent hover:bg-accent-dark text-accent-foreground">
+        <Button type="submit" disabled={mutation.isPending} className="w-full bg-accent hover:bg-accent-dark text-accent-foreground">
             {mutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Create Postgres Credential
-          </Button>
-        </DialogFooter>
+        </Button>
       </form>
     </Form>
   );

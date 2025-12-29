@@ -7,13 +7,15 @@ export class N8nService {
   private webhookUrl: string;
   private mergeWebhookUrl: string;
   private credentialWebhookUrl: string;
+  private fetchDevWorkflowsWebhookUrl: string;
 
-  constructor(baseUrl: string, apiKey: string, webhookUrl: string, mergeWebhookUrl: string, credentialWebhookUrl: string) {
+  constructor(baseUrl: string, apiKey: string, webhookUrl: string, mergeWebhookUrl: string, credentialWebhookUrl: string, fetchDevWorkflowsWebhookUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.apiKey = apiKey;
     this.webhookUrl = webhookUrl;
     this.mergeWebhookUrl = mergeWebhookUrl;
     this.credentialWebhookUrl = credentialWebhookUrl;
+    this.fetchDevWorkflowsWebhookUrl = fetchDevWorkflowsWebhookUrl;
   }
 
 
@@ -134,7 +136,7 @@ export class N8nService {
    * @param type The type of credential (supabase, respondio, postgres)
    * @param data The credential data
    */
-  async createCredentialViaWebhook(type: string, data: any): Promise<void> {
+  async createCredentialViaWebhook(type: string, data: any): Promise<{ id: string; name: string } | void> {
     try {
       console.log(`[N8nService] Creating credential (${type}) via webhook: ${this.credentialWebhookUrl}`);
       
@@ -143,7 +145,7 @@ export class N8nService {
         data
       };
 
-      await axios.post(this.credentialWebhookUrl, payload, {
+      const response = await axios.post(this.credentialWebhookUrl, payload, {
         headers: {
           'Content-Type': 'application/json',
           'X-N8N-API-KEY': this.apiKey,
@@ -151,10 +153,48 @@ export class N8nService {
       });
 
       console.log(`[N8nService] Successfully request credential creation for "${type}"`);
+      
+      // If webhook returns the created credential ID, return it
+      if (response.data && response.data.id) {
+          return { id: response.data.id, name: response.data.name || type };
+      }
+      // If array
+      if (Array.isArray(response.data) && response.data[0]?.id) {
+          return { id: response.data[0].id, name: response.data[0].name || type };
+      }
+
     } catch (error: any) {
       console.error(`[N8nService] Failed to create credential "${type}":`, error.message);
       throw new Error(`Failed to create credential "${type}"`);
     }
+  }
+
+  /**
+   * Fetch all "dev" workflows from Production via Webhook
+   */
+  async fetchDevWorkflows(): Promise<N8NWorkflow[]> {
+      try {
+          console.log(`[N8nService] Fetching dev workflows via webhook: ${this.fetchDevWorkflowsWebhookUrl}`);
+          const response = await axios.get(this.fetchDevWorkflowsWebhookUrl, {
+              headers: {
+                  'X-N8N-API-KEY': this.apiKey
+              }
+          });
+          
+          if (Array.isArray(response.data)) {
+              return response.data;
+          }
+          // Handle wrapped response
+          if (response.data && Array.isArray(response.data.data)) {
+              return response.data.data;
+          }
+          
+          console.warn('[N8nService] Unexpected response format for dev workflows:', response.data);
+          return [];
+      } catch (error: any) {
+          console.error('[N8nService] Failed to fetch dev workflows:', error.message);
+          throw new Error('Failed to fetch dev workflows');
+      }
   }
 }
 
@@ -167,10 +207,11 @@ export function createN8nService(): N8nService {
   const webhookUrl = process.env.N8N_CREATE_WORKFLOW_WEBHOOK_URL || 'https://eranclikview.app.n8n.cloud/webhook/create_workflow';
   const mergeWebhookUrl = process.env.N8N_MERGE_WEBHOOK_URL || 'https://n8n.wonderbeauties.com/webhook/merge_n8n_github';
   const credentialWebhookUrl = process.env.N8N_CREATE_CREDENTIAL_WEBHOOK_URL || 'https://n8n.wonderbeauties.com/webhook/create_credential';
+  const fetchDevWorkflowsWebhookUrl = process.env.N8N_FETCH_DEV_WORKFLOWS_WEBHOOK_URL || 'https://n8n.wonderbeauties.com/webhook/fetch_dev_workflows';
 
   if (!apiKey) {
       console.warn('N8N_API_KEY is not set. N8N integration will fail.');
   }
 
-  return new N8nService(baseUrl, apiKey, webhookUrl, mergeWebhookUrl, credentialWebhookUrl);
+  return new N8nService(baseUrl, apiKey, webhookUrl, mergeWebhookUrl, credentialWebhookUrl, fetchDevWorkflowsWebhookUrl);
 }

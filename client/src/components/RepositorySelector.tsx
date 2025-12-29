@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import CreateStagingCredentialsDialog from '@/components/CreateStagingCredentialsDialog';
+import CreateStagingDialog from '@/components/CreateStagingDialog';
 import {
   Select,
   SelectContent,
@@ -255,13 +255,13 @@ export default function RepositorySelector({ onRepositorySelected, isLoading = f
               variant="outline"
               className="w-full border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700"
             >
-              Create Staging Credentials
+              Create Staging Environment
             </Button>
           </div>
         )}
       </CardContent>
 
-      <CreateStagingCredentialsDialog
+      <CreateStagingDialog
         open={showCredentialsDialog}
         onOpenChange={setShowCredentialsDialog}
       />

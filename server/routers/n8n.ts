@@ -163,6 +163,81 @@ export const n8nRouter = router({
         return await n8nService.createCredentialViaWebhook(input.type, input.data);
     }),
 
+  createStagingEnvironment: publicProcedure
+    .input(z.object({
+        credentials: z.record(z.string(), z.string()) // Mapping: Credential Type -> New Credential ID
+    }))
+    .mutation(async ({ input }) => {
+        try {
+            console.log('[createStagingEnvironment] Step 1: Fetching dev workflows...');
+            const devWorkflows = await n8nService.fetchDevWorkflows();
+            console.log(`[createStagingEnvironment] Found ${devWorkflows.length} dev workflows.`);
+
+            const results = [];
+
+            for (const workflow of devWorkflows) {
+                try {
+                    // Step 2: Rename Workflow
+                    // "dev - Name" -> "staging - Name"
+                    let newName = workflow.name;
+                    if (newName.startsWith('dev - ')) {
+                        newName = newName.replace('dev - ', 'staging - ');
+                    } else if (!newName.startsWith('staging - ')) {
+                        newName = `staging - ${newName}`;
+                    }
+
+                    // Deep clone to avoid mutating original if cached/shared (though fetch returns new obj)
+                    const stagingWorkflow = JSON.parse(JSON.stringify(workflow));
+                    stagingWorkflow.name = newName;
+                    stagingWorkflow.id = undefined; // Ensure new ID
+
+                    // Step 3: Replace Credentials
+                    if (stagingWorkflow.nodes) {
+                        for (const node of stagingWorkflow.nodes) {
+                            if (node.credentials) {
+                                for (const [credType, credConfig] of Object.entries(node.credentials)) {
+                                    // Check if we have a new credential ID for this type
+                                    // credType is the credential name used in N8N node definition (e.g. 'postgres', 'supabaseApi')
+                                    // The user provided input.credentials keys should match these types or we need a mapping.
+                                    // Assuming direct match or simplified types like 'postgres', 'supabase', 'respondio'
+                                    
+                                    // Helper to match types loosely
+                                    const targetCredId = input.credentials[credType] ||
+                                                         (credType.includes('postgres') ? input.credentials['postgres'] : undefined) ||
+                                                         (credType.includes('supabase') ? input.credentials['supabase'] : undefined) ||
+                                                         (credType.includes('respond') ? input.credentials['respondio'] : undefined);
+
+                                    if (targetCredId) {
+                                        console.log(`[createStagingEnvironment] Replacing ${credType} credential in node ${node.name} with ${targetCredId}`);
+                                        // Update the credential ID.
+                                        // Structure: node.credentials[credType] = { id: "...", name: "..." }
+                                        // We only update the ID. Name is often just for display in UI, but we can set it to 'Staging Credential'
+                                        (node.credentials[credType] as any).id = targetCredId;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Create the new Staging Workflow
+                    console.log(`[createStagingEnvironment] Creating staging workflow: ${newName}`);
+                    const result = await n8nService.createWorkflow(stagingWorkflow);
+                    results.push({ originalName: workflow.name, stagingName: result.name, status: 'success' });
+
+                } catch (e: any) {
+                    console.error(`[createStagingEnvironment] Failed to process workflow ${workflow.name}:`, e);
+                    results.push({ originalName: workflow.name, status: 'error', message: e.message });
+                }
+            }
+
+            return { success: true, results };
+
+        } catch (error: any) {
+            console.error('[createStagingEnvironment] Error:', error);
+            throw new Error(error.message || 'Failed to create staging environment');
+        }
+    }),
+
   generateGraphSuggestion: publicProcedure
     .input(z.object({
         owner: z.string(),
