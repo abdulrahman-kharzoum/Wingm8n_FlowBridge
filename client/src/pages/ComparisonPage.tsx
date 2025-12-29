@@ -203,7 +203,10 @@ export default function ComparisonPage() {
   const n8nUtils = trpc.useContext().n8n;
   const generateSuggestionMutation = trpc.n8n.generateGraphSuggestion.useMutation();
   const createWorkflowMutation = trpc.n8n.createWorkflowFromMapping.useMutation();
+  const createWorkflowViaWebhookMutation = trpc.n8n.createWorkflowViaWebhook.useMutation();
+
   const workflowsQuery = trpc.n8n.getWorkflows.useQuery(
+
       { owner: selectedRepo?.owner || '', repo: selectedRepo?.repo || '' }, 
       {
           enabled: !!selectedRepo,
@@ -218,6 +221,26 @@ export default function ComparisonPage() {
   
   const [suggestions, setSuggestions] = useState<Record<string, { status: 'mapped' | 'missing'; targetId?: string; targetName?: string }>>({});
   const [isCreatingWorkflow, setIsCreatingWorkflow] = useState<string | null>(null);
+
+  const handleWorkflowCallSelected = (call: any, action: 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string }) => {
+       setMergeDecisions((prev) => ({
+           ...prev,
+           workflowCalls: {
+               ...prev.workflowCalls,
+               [`${call.sourceWorkflow}->${call.targetWorkflow}`]: action
+           }
+       }));
+  };
+
+  const handleBulkWorkflowCallSelected = (updates: Record<string, 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string }>) => {
+       setMergeDecisions((prev) => ({
+           ...prev,
+           workflowCalls: {
+               ...prev.workflowCalls,
+               ...updates
+           }
+       }));
+  };
 
   const handleGenerateSuggestions = async () => {
     if (!analysis?.workflowCalls) return;
@@ -300,6 +323,7 @@ export default function ComparisonPage() {
           });
           
           toast.success(`Created workflow: ${result.name}`);
+          n8nUtils.getWorkflows.invalidate();
           
           // Update suggestion to mapped
           setSuggestions(prev => ({
@@ -326,25 +350,49 @@ export default function ComparisonPage() {
       }
   };
 
-  const handleWorkflowCallSelected = (call: any, action: 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string }) => {
-       setMergeDecisions((prev) => ({
-           ...prev,
-           workflowCalls: {
-               ...prev.workflowCalls,
-               [`${call.sourceWorkflow}->${call.targetWorkflow}`]: action
-           }
-       }));
+  const handleManualLink = (call: any, targetId: string, targetName: string) => {
+      handleWorkflowCallSelected(call, {
+          action: 'map',
+          targetId,
+          targetName
+      });
+      toast.success(`Linked to ${targetName} (${targetId})`);
   };
 
-  const handleBulkWorkflowCallSelected = (updates: Record<string, 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string }>) => {
-       setMergeDecisions((prev) => ({
-           ...prev,
-           workflowCalls: {
-               ...prev.workflowCalls,
-               ...updates
-           }
-       }));
+  const handleCreateWorkflowViaWebhook = async (call: any, name: string) => {
+      setIsCreatingWorkflow(call.targetWorkflow);
+      try {
+          // Optional: We could fetch the staging JSON content if we want to pass it as a template.
+          // But the user prompt implied: "make a call post on that workfow with its name... and the stagging json... or just an empty valid json".
+          // The backend creates an empty valid json if not provided.
+          // Since we don't easily have the staging json content here (it's in the analysis but maybe deep),
+          // let's start with the empty/default structure created by the backend which is safer.
+          // Note: If we really want the staging json we would need to fetch it or pass it from the analysis data.
+          // The 'call' object from analysis doesn't contain the full JSON.
+          
+          const result = await createWorkflowViaWebhookMutation.mutateAsync({
+              name
+          });
+
+          toast.success(`Created workflow: ${result.name}`);
+          n8nUtils.getWorkflows.invalidate();
+          
+          // Auto-link
+          handleWorkflowCallSelected(call, {
+              action: 'map',
+              targetId: result.id, 
+              targetName: result.name
+          });
+          
+      } catch (e: any) {
+          console.error(e);
+          toast.error(`Failed to create workflow via webhook: ${e.message}`);
+      } finally {
+          setIsCreatingWorkflow(null);
+      }
   };
+
+
 
   const handleMetadataSelected = (filename: string, key: string, source: 'staging' | 'main' | null) => {
       const uniqueKey = `${filename}-${key}`;
@@ -726,8 +774,10 @@ export default function ComparisonPage() {
                       isGeneratingSuggestions={generateSuggestionMutation.isPending}
                       suggestions={suggestions}
                       onCreateWorkflow={handleCreateWorkflow}
-                      isCreatingWorkflow={isCreatingWorkflow}
+                      isCreatingWorkflow={isCreatingWorkflow || createWorkflowViaWebhookMutation.isPending ? isCreatingWorkflow : null}
                       availableWorkflows={workflowsQuery.data || []}
+                      onManualLink={handleManualLink}
+                      onCreateViaWebhook={handleCreateWorkflowViaWebhook}
                     />
                   </TabsContent>
                    

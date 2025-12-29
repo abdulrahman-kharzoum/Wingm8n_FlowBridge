@@ -14,6 +14,10 @@ import {
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { WorkflowCallDiff, WorkflowCall } from '@shared/types/workflow.types';
 import { Loader2 } from 'lucide-react';
 
@@ -32,6 +36,8 @@ interface WorkflowCallsComparisonProps {
   onCreateWorkflow?: (call: WorkflowCall) => void;
   isCreatingWorkflow?: string | null; // ID of workflow being created
   availableWorkflows?: Array<{ id: string; name: string }>; // For manual mapping dropdown
+  onManualLink?: (call: WorkflowCall, targetId: string, targetName: string) => void;
+  onCreateViaWebhook?: (call: WorkflowCall, name: string) => void;
 }
 
 const ChainNode = ({ name, id, type = 'default' }: { name: string; id?: string; type?: 'default' | 'source' | 'target' | 'new' }) => {
@@ -67,8 +73,14 @@ export default function WorkflowCallsComparison({
   suggestions,
   onCreateWorkflow,
   isCreatingWorkflow,
-  availableWorkflows = []
+  availableWorkflows = [],
+  onManualLink,
+  onCreateViaWebhook
 }: WorkflowCallsComparisonProps) {
+    const [resolvingCall, setResolvingCall] = useState<WorkflowCall | null>(null);
+    const [resolveMode, setResolveMode] = useState<'manual' | 'create'>('create');
+    const [manualId, setManualId] = useState('');
+    const [manualName, setManualName] = useState('');
     const relationships = useMemo(() => {
         const groups: Record<string, typeof workflowCalls> = {};
         workflowCalls.forEach(call => {
@@ -378,6 +390,13 @@ export default function WorkflowCallsComparison({
                                                                     {!availableWorkflows.some(w => w.id === target) && (
                                                                         <SelectItem value={target}>{callObj.targetWorkflowName || target} (Current)</SelectItem>
                                                                     )}
+                                                                    {/* Include selected mapped ID if different from target and not in list */}
+                                                                    {selectValue && selectValue !== target && !availableWorkflows.some(w => w.id === selectValue) && (
+                                                                        <SelectItem value={selectValue}>
+                                                                            {/* Try to find name from decision/suggestion or fallback to ID */}
+                                                                            {(typeof decision === 'object' ? decision.targetName : null) || suggestion?.targetName || selectValue} (Mapped)
+                                                                        </SelectItem>
+                                                                    )}
                                                                 </SelectContent>
                                                             </Select>
                                                         </div>
@@ -402,10 +421,43 @@ export default function WorkflowCallsComparison({
                                                         )}
                                                     </div>
                                                     
-                                                    {isMissing && !isCreatingWorkflow && (
-                                                        <div className="text-[10px] text-red-400 flex items-center gap-1">
-                                                            <AlertCircle className="w-3 h-3" />
-                                                            Workflow not found in Production. Link manually or create structure.
+                                                    {isMissing && !isCreatingWorkflow && !isMappedDecision && (
+                                                        <div className="text-[10px] text-red-500 flex flex-col gap-1 mt-2 p-2 bg-red-500/10 rounded border border-red-500/20">
+                                                            <div className="flex items-center gap-1 font-medium">
+                                                                <AlertCircle className="w-3 h-3" />
+                                                                Workflow not found in Production
+                                                            </div>
+                                                            <div className="pl-4 flex gap-3">
+                                                                 <button 
+                                                                    className="underline hover:text-red-300 cursor-pointer"
+                                                                    onClick={() => {
+                                                                        setResolvingCall(callObj);
+                                                                        // Pre-fill name if available
+                                                                        setManualName(callObj.targetWorkflowName || ''); 
+                                                                        setManualId(''); 
+                                                                        setResolveMode('manual');
+                                                                    }}
+                                                                 >
+                                                                    Link manually
+                                                                 </button>
+                                                                 <button 
+                                                                    className="underline hover:text-red-300 cursor-pointer"
+                                                                    onClick={() => {
+                                                                        setResolvingCall(callObj);
+                                                                        // Suggest dev name
+                                                                        let suggestedName = callObj.targetWorkflowName || '';
+                                                                        if (suggestedName.startsWith('staging - ')) {
+                                                                            suggestedName = suggestedName.replace('staging - ', 'dev - ');
+                                                                        } else {
+                                                                            suggestedName = `dev - ${suggestedName}`;
+                                                                        }
+                                                                        setManualName(suggestedName);
+                                                                        setResolveMode('create');
+                                                                    }}
+                                                                 >
+                                                                    create structure (Webhook)
+                                                                 </button>
+                                                            </div>
                                                         </div>
                                                     )}
                                                 </div>
@@ -421,6 +473,94 @@ export default function WorkflowCallsComparison({
             )}
         </CardContent>
       </Card>
+      <Dialog open={!!resolvingCall} onOpenChange={(open) => !open && setResolvingCall(null)}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white">
+            <DialogHeader>
+                <DialogTitle>Resolve Missing Workflow</DialogTitle>
+                <DialogDescription className="text-slate-400">
+                    {resolveMode === 'manual' ? 'Manually link to an existing production workflow.' : 'Create a new workflow structure in production via Webhook.'}
+                </DialogDescription>
+            </DialogHeader>
+            
+            <div className="py-4">
+                <Tabs value={resolveMode} onValueChange={(v) => setResolveMode(v as any)} className="w-full">
+                    <TabsList className="grid w-full grid-cols-2 bg-slate-800">
+                        <TabsTrigger value="manual">Link Manually</TabsTrigger>
+                        <TabsTrigger value="create">Create via Webhook</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="manual" className="space-y-4 mt-4">
+                        <div className="space-y-2">
+                            <Label>Workflow Name</Label>
+                            <Input 
+                                value={manualName} 
+                                onChange={(e) => setManualName(e.target.value)} 
+                                className="bg-slate-800 border-slate-600"
+                                placeholder="e.g. My Workflow" 
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Workflow ID</Label>
+                            <Input 
+                                value={manualId} 
+                                onChange={(e) => setManualId(e.target.value)} 
+                                className="bg-slate-800 border-slate-600 font-mono"
+                                placeholder="e.g. Qc392pmwG6SSFBKF" 
+                            />
+                        </div>
+                    </TabsContent>
+                    
+                    <TabsContent value="create" className="space-y-4 mt-4">
+                        <div className="space-y-2">
+                            <Label>New Workflow Name</Label>
+                            <Input 
+                                value={manualName} 
+                                onChange={(e) => setManualName(e.target.value)} 
+                                className="bg-slate-800 border-slate-600"
+                                placeholder="e.g. dev - My Workflow" 
+                            />
+                            <p className="text-xs text-slate-500">
+                                This will create a basic workflow structure using the configured N8N Webhook.
+                            </p>
+                        </div>
+                    </TabsContent>
+                </Tabs>
+            </div>
+
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setResolvingCall(null)} className="border-slate-600 text-slate-300">
+                    Cancel
+                </Button>
+                {resolveMode === 'manual' ? (
+                     <Button 
+                        onClick={() => {
+                            if (resolvingCall && manualId && manualName) {
+                                onManualLink?.(resolvingCall, manualId, manualName);
+                                setResolvingCall(null);
+                            }
+                        }}
+                        disabled={!manualId || !manualName}
+                        className="bg-blue-600 hover:bg-blue-700"
+                    >
+                        Link Workflow
+                    </Button>
+                ) : (
+                    <Button 
+                        onClick={() => {
+                            if (resolvingCall && manualName) {
+                                onCreateViaWebhook?.(resolvingCall, manualName);
+                                setResolvingCall(null);
+                            }
+                        }}
+                        disabled={!manualName}
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                    >
+                        Create Workflow
+                    </Button>
+                )}
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

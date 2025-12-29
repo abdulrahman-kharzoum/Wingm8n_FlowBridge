@@ -44,6 +44,24 @@ export const n8nRouter = router({
       return await n8nService.createWorkflow(input.workflow);
     }),
 
+  createWorkflowViaWebhook: publicProcedure
+    .input(z.object({
+        name: z.string(),
+        workflowJson: z.any().optional()
+    }))
+    .mutation(async ({ input }) => {
+        const payload = input.workflowJson || { 
+            name: input.name, 
+            nodes: [], 
+            connections: {}, 
+            settings: {} 
+        };
+        // Ensure name is set in payload 
+        payload.name = input.name;
+        
+        return await n8nService.createWorkflow(payload);
+    }),
+
   createWorkflowFromMapping: publicProcedure
     .input(z.object({
         owner: z.string(),
