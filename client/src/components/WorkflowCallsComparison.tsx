@@ -171,6 +171,8 @@ export default function WorkflowCallsComparison({
             // Apply naming convention if needed? Usually we want to map Staging Name -> Dev Name
              if (name.startsWith('staging - ')) {
                 name = name.replace('staging - ', 'dev - ');
+            } else if (name.startsWith('staging- ')) {
+                name = name.replace('staging- ', 'dev - ');
             } else if (!name.startsWith('dev - ')) {
                  name = `dev - ${name}`;
             }
@@ -192,6 +194,8 @@ export default function WorkflowCallsComparison({
              let name = call.targetWorkflowName || call.targetWorkflow;
              if (name.startsWith('staging - ')) {
                 name = name.replace('staging - ', 'dev - ');
+            } else if (name.startsWith('staging- ')) {
+                name = name.replace('staging- ', 'dev - ');
             } else if (!name.startsWith('dev - ')) {
                  name = `dev - ${name}`;
             }

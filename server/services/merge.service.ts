@@ -23,7 +23,8 @@ export class MergeService {
     mainBranch: string,
     stagingWorkflows: Array<{ name: string; path: string; content: N8NWorkflow }>,
     mainWorkflows: Array<{ name: string; path: string; content: N8NWorkflow }>,
-    decisions: MergeDecision
+    decisions: MergeDecision,
+    createdWorkflowMappings?: Record<string, string> // name -> id from "Create Missing" webhook
   ): Promise<MergeBranch> {
     try {
       // Generate unique merge branch name
@@ -40,6 +41,10 @@ export class MergeService {
       console.log(`  Domains: ${Object.keys(decisions.domains).length} - ${JSON.stringify(decisions.domains, null, 2)}`);
       console.log(`  Workflow Calls: ${Object.keys(decisions.workflowCalls).length} - ${JSON.stringify(decisions.workflowCalls, null, 2)}`);
       console.log(`  Metadata: ${Object.keys(decisions.metadata).length} - ${JSON.stringify(decisions.metadata, null, 2)}`);
+      console.log(`  Created Workflow Mappings: ${createdWorkflowMappings ? Object.keys(createdWorkflowMappings).length : 0}`);
+      if (createdWorkflowMappings) {
+        console.log(`  Mappings: ${JSON.stringify(createdWorkflowMappings, null, 2)}`);
+      }
 
       // Create the merge branch from main
       console.log(`\n[Step 1] Creating merge branch from main...`);
@@ -52,7 +57,8 @@ export class MergeService {
       const mergedWorkflows = this.mergeWorkflows(
         stagingWorkflows,
         mainWorkflows,
-        decisions
+        decisions,
+        createdWorkflowMappings
       );
 
       // Track if any actual changes were made
@@ -132,7 +138,8 @@ export class MergeService {
   private mergeWorkflows(
     stagingWorkflows: Array<{ name: string; path: string; content: N8NWorkflow }>,
     mainWorkflows: Array<{ name: string; path: string; content: N8NWorkflow }>,
-    decisions: MergeDecision
+    decisions: MergeDecision,
+    createdWorkflowMappings?: Record<string, string>
   ): Array<{ name: string; path: string; content: N8NWorkflow }> {
     console.log(`[Merge] Merging workflows: ${stagingWorkflows.length} staging, ${mainWorkflows.length} main`);
     
@@ -210,6 +217,47 @@ export class MergeService {
           stagingWorkflow.path, // Use staging path/name
           mainCredentialMap
         );
+
+        // Check if this staging workflow was mapped to a newly created dev workflow
+        // Priority 1: Use createdWorkflowMappings (direct from "Create Missing" webhook)
+        let replaced = false;
+        if (createdWorkflowMappings && Object.keys(createdWorkflowMappings).length > 0) {
+            const stagingName = stagingWorkflow.content.name;
+            // Convert staging name to expected dev name
+            let expectedDevName = stagingName;
+            if (stagingName.startsWith('staging - ')) {
+                expectedDevName = stagingName.replace('staging - ', 'dev - ');
+            } else if (stagingName.startsWith('staging- ')) {
+                expectedDevName = stagingName.replace('staging- ', 'dev - ');
+            } else if (!stagingName.startsWith('dev - ')) {
+                expectedDevName = `dev - ${stagingName}`;
+            }
+            
+            // Look up in createdWorkflowMappings
+            if (createdWorkflowMappings[expectedDevName]) {
+                const newId = createdWorkflowMappings[expectedDevName];
+                console.log(`[Merge] Replacing staging workflow via createdWorkflowMappings: ${merged.id}/${merged.name} -> ${newId}/${expectedDevName}`);
+                merged.id = newId;
+                merged.name = expectedDevName;
+                replaced = true;
+            }
+        }
+        
+        // Priority 2: Fallback to workflowCalls decisions (from Suggest Graph / dropdown)
+        if (!replaced) {
+            const stagingId = stagingWorkflow.content.id;
+            for (const [key, action] of Object.entries(decisions.workflowCalls)) {
+                // key format: "sourceWorkflow->targetWorkflow" where targetWorkflow = stagingId
+                if (key.endsWith(`->${stagingId}`) && typeof action === 'object' && action.action === 'map') {
+                    console.log(`[Merge] Replacing staging workflow via workflowCalls: ${merged.id}/${merged.name} -> ${action.targetId}/${action.targetName}`);
+                    merged.id = action.targetId;
+                    if (action.targetName) {
+                        merged.name = action.targetName;
+                    }
+                    break;
+                }
+            }
+        }
 
         mergedWorkflows.push({
             name: stagingWorkflow.name,

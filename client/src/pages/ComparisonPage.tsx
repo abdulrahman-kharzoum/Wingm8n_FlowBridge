@@ -414,10 +414,13 @@ export default function ComparisonPage() {
               try {
                   // Determine name: use dev prefix if needed, or just clean name
                   let nameToCreate = call.targetWorkflowName || call.targetWorkflow;
-                  if (!nameToCreate.startsWith('dev - ') && !nameToCreate.startsWith('staging - ')) {
-                      nameToCreate = `dev - ${nameToCreate}`;
-                  } else if (nameToCreate.startsWith('staging - ')) {
+                  if (nameToCreate.startsWith('staging - ')) {
                       nameToCreate = nameToCreate.replace('staging - ', 'dev - ');
+                  } else if (nameToCreate.startsWith('staging- ')) {
+                      // Handle case without space after dash (e.g., "staging- X" -> "dev - X")
+                      nameToCreate = nameToCreate.replace('staging- ', 'dev - ');
+                  } else if (!nameToCreate.startsWith('dev - ')) {
+                      nameToCreate = `dev - ${nameToCreate}`;
                   }
 
                   const result = await createWorkflowViaWebhookMutation.mutateAsync({
@@ -493,12 +496,19 @@ export default function ComparisonPage() {
     if (!selectedRepo) return;
 
     try {
+      // Convert createdWorkflows Map to Record for API
+      const createdWorkflowMappings: Record<string, string> = {};
+      createdWorkflows.forEach((id, name) => {
+        createdWorkflowMappings[name] = id;
+      });
+
       const result = await createMergeBranchMutation.mutateAsync({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         stagingBranch: selectedRepo.stagingBranch,
         mainBranch: selectedRepo.mainBranch,
         decisions: mergeDecisions as any, // Cast to any to bypass type check for now, as types are complex
+        createdWorkflowMappings,
       });
 
       setMergeResult({ branchName: result.data.name });

@@ -40,7 +40,7 @@ export class N8nService {
       const response = await axios.post(this.webhookUrl, payload, {
           headers: {
               'Content-Type': 'application/json',
-              'X-N8N-API-KEY': this.apiKey, // Including API Key in case webhook requires it
+              'X-N8N-API-KEY': this.apiKey,
           }
       });
 

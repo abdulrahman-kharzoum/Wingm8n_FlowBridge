@@ -42,6 +42,8 @@ export const mergeRouter = router({
           ),
           metadata: z.record(z.string(), z.enum(['staging', 'main'])),
         }),
+        // Mapping of newly created workflow names to their IDs (from "Create Missing" webhook)
+        createdWorkflowMappings: z.record(z.string(), z.string()).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -77,7 +79,8 @@ export const mergeRouter = router({
           input.mainBranch,
           stagingWorkflows.workflows,
           mainWorkflows.workflows,
-          input.decisions as MergeDecision
+          input.decisions as MergeDecision,
+          input.createdWorkflowMappings
         );
 
         return {
