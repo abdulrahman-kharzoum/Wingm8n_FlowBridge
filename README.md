@@ -125,7 +125,14 @@ DATABASE_URL=file:sqlite.db
    pnpm install
    ```
 
-3. **Start the development server**
+3. **Set up the database**
+
+   Run the database migrations to create the SQLite database:
+   ```bash
+   pnpm run db:push
+   ```
+
+4. **Start the development server**
    ```bash
    pnpm run dev
    ```

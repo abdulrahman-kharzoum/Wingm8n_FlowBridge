@@ -17,7 +17,7 @@ export const users = sqliteTable("users", {
   email: text("email"),
   loginMethod: text("loginMethod"),
   githubToken: text("githubToken"),
-  role: text("role", { enum: ["user", "admin"] }).default("user").notNull(),
+  role: text("role").notNull().$defaultFn(() => 'user'),
   createdAt: integer("createdAt", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
   updatedAt: integer("updatedAt", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
   lastSignedIn: integer("lastSignedIn", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
