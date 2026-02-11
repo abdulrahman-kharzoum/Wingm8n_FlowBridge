@@ -8,6 +8,7 @@ import type {
   BranchWorkflows,
   WorkflowComparison,
   Credential,
+  CredentialWithUsage,
   Domain,
   WorkflowCallChain,
 } from '@shared/types/workflow.types';
@@ -18,6 +19,7 @@ import {
   compareCredentials,
   compareDomains,
   compareWorkflowCalls,
+  extractCredentialsWithUsage,
 } from '@shared/utils/workflow-parser';
 
 export class WorkflowAnalyzerService {
@@ -49,6 +51,8 @@ export class WorkflowAnalyzerService {
       credentials: credentialDiffs,
       domains: domainDiffs,
       workflowCalls: workflowCallDiffs,
+      metadata: [], // TODO: Implement metadata comparison across all workflows
+      nodeChanges: [], // TODO: Implement node comparison across all workflows
     };
   }
 
@@ -61,14 +65,25 @@ export class WorkflowAnalyzerService {
       path: string;
       content: N8NWorkflow;
     }>
-  ): Credential[] {
-    const credentialMap = new Map<string, Credential>();
+  ): CredentialWithUsage[] {
+    const credentialMap = new Map<string, CredentialWithUsage>();
 
     workflows.forEach((workflow) => {
-      const credentials = extractCredentials(workflow.content);
+      const credentials = extractCredentialsWithUsage(workflow.content);
       credentials.forEach((cred) => {
         if (!credentialMap.has(cred.id)) {
           credentialMap.set(cred.id, cred);
+        } else {
+          // If it already exists, merge the usage
+          const existing = credentialMap.get(cred.id)!;
+          const existingUsageIds = new Set(existing.usedByNodes.map(n => n.nodeId));
+
+          cred.usedByNodes.forEach(usage => {
+            if (!existingUsageIds.has(usage.nodeId)) {
+              existing.usedByNodes.push(usage);
+              existingUsageIds.add(usage.nodeId);
+            }
+          });
         }
       });
     });

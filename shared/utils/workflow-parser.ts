@@ -7,6 +7,7 @@ import type {
   N8NWorkflow,
   N8NNode,
   Credential,
+  CredentialWithUsage,
   Domain,
   WorkflowCall,
   WorkflowCallChain,
@@ -50,11 +51,11 @@ export function compareMetadata(
     // Simple equality check (works for primitives, need JSON.stringify for objects/arrays like tags)
     const stagingVal = stagingMetadata[key];
     const mainVal = mainMetadata[key];
-    
+
     let isDifferent = stagingVal !== mainVal;
-    
+
     if (typeof stagingVal === 'object' || typeof mainVal === 'object') {
-        isDifferent = JSON.stringify(stagingVal) !== JSON.stringify(mainVal);
+      isDifferent = JSON.stringify(stagingVal) !== JSON.stringify(mainVal);
     }
 
     if (isDifferent) {
@@ -95,81 +96,81 @@ export function compareNodes(
     const mainNode = mainNodeMap.get(name);
 
     if (stagingNode && !mainNode) {
-        diffs.push({
-            nodeName: name,
-            nodeType: stagingNode.type,
-            changeType: 'added'
-        });
+      diffs.push({
+        nodeName: name,
+        nodeType: stagingNode.type,
+        changeType: 'added'
+      });
     } else if (!stagingNode && mainNode) {
-        diffs.push({
-            nodeName: name,
-            nodeType: mainNode.type,
-            changeType: 'removed'
-        });
+      diffs.push({
+        nodeName: name,
+        nodeType: mainNode.type,
+        changeType: 'removed'
+      });
     } else if (stagingNode && mainNode) {
-        // Modified - check parameters and specific root properties
-        const paramDiffs: ParameterDiff[] = [];
-        const stagingParams = stagingNode.parameters || {};
-        const mainParams = mainNode.parameters || {};
-        
-        // Check root properties that are important
-        const rootPropsToCheck = ['webhookId', 'credentials'];
-        rootPropsToCheck.forEach(prop => {
-            // @ts-ignore
-            const sVal = stagingNode[prop];
-            // @ts-ignore
-            const mVal = mainNode[prop];
-            
-            if (JSON.stringify(sVal) !== JSON.stringify(mVal)) {
-                 paramDiffs.push({
-                     key: prop,
-                     stagingValue: sVal,
-                     mainValue: mVal
-                 });
-            }
-        });
+      // Modified - check parameters and specific root properties
+      const paramDiffs: ParameterDiff[] = [];
+      const stagingParams = stagingNode.parameters || {};
+      const mainParams = mainNode.parameters || {};
 
-        // Flatten parameters for comparison
-        const flatten = (obj: any, prefix = ''): Record<string, any> => {
-            let result: Record<string, any> = {};
-            for (const key in obj) {
-                const val = obj[key];
-                const newKey = prefix ? `${prefix}.${key}` : key;
-                if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
-                    Object.assign(result, flatten(val, newKey));
-                } else {
-                    result[newKey] = val;
-                }
-            }
-            return result;
-        };
+      // Check root properties that are important
+      const rootPropsToCheck = ['webhookId', 'credentials'];
+      rootPropsToCheck.forEach(prop => {
+        // @ts-ignore
+        const sVal = stagingNode[prop];
+        // @ts-ignore
+        const mVal = mainNode[prop];
 
-        const flatStaging = flatten(stagingParams);
-        const flatMain = flatten(mainParams);
-        const allParamKeys = new Set([...Object.keys(flatStaging), ...Object.keys(flatMain)]);
-
-        allParamKeys.forEach(key => {
-            const sVal = flatStaging[key];
-            const mVal = flatMain[key];
-            if (sVal !== mVal) {
-                 if (Array.isArray(sVal) || Array.isArray(mVal)) {
-                     if (JSON.stringify(sVal) !== JSON.stringify(mVal)) {
-                         paramDiffs.push({ key, stagingValue: sVal, mainValue: mVal });
-                     }
-                 } else {
-                     paramDiffs.push({ key, stagingValue: sVal, mainValue: mVal });
-                 }
-            }
-        });
-
-        if (paramDiffs.length > 0) {
-            diffs.push({
-                nodeName: name,
-                nodeType: stagingNode.type,
-                changeType: 'modified',
-                parameterChanges: paramDiffs
-            });
+        if (JSON.stringify(sVal) !== JSON.stringify(mVal)) {
+          paramDiffs.push({
+            key: prop,
+            stagingValue: sVal,
+            mainValue: mVal
+          });
         }
+      });
+
+      // Flatten parameters for comparison
+      const flatten = (obj: any, prefix = ''): Record<string, any> => {
+        let result: Record<string, any> = {};
+        for (const key in obj) {
+          const val = obj[key];
+          const newKey = prefix ? `${prefix}.${key}` : key;
+          if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+            Object.assign(result, flatten(val, newKey));
+          } else {
+            result[newKey] = val;
+          }
+        }
+        return result;
+      };
+
+      const flatStaging = flatten(stagingParams);
+      const flatMain = flatten(mainParams);
+      const allParamKeys = new Set([...Object.keys(flatStaging), ...Object.keys(flatMain)]);
+
+      allParamKeys.forEach(key => {
+        const sVal = flatStaging[key];
+        const mVal = flatMain[key];
+        if (sVal !== mVal) {
+          if (Array.isArray(sVal) || Array.isArray(mVal)) {
+            if (JSON.stringify(sVal) !== JSON.stringify(mVal)) {
+              paramDiffs.push({ key, stagingValue: sVal, mainValue: mVal });
+            }
+          } else {
+            paramDiffs.push({ key, stagingValue: sVal, mainValue: mVal });
+          }
+        }
+      });
+
+      if (paramDiffs.length > 0) {
+        diffs.push({
+          nodeName: name,
+          nodeType: stagingNode.type,
+          changeType: 'modified',
+          parameterChanges: paramDiffs
+        });
+      }
     }
   });
 
@@ -191,39 +192,39 @@ export function getCredentialReplacements(
   stagingNodes.forEach((stagingNode, name) => {
     const mainNode = mainNodes.get(name);
     if (mainNode && stagingNode.credentials && mainNode.credentials) {
-       const stagingCreds = stagingNode.credentials;
-       const mainCreds = mainNode.credentials;
-       
-       const stagingKeys = Object.keys(stagingCreds);
-       const mainKeys = Object.keys(mainCreds);
+      const stagingCreds = stagingNode.credentials;
+      const mainCreds = mainNode.credentials;
 
-       // 1. Direct ID replacements (Same Type)
-       stagingKeys.forEach(credType => {
-           const sCred = stagingCreds[credType];
-           const mCred = mainCreds[credType];
-           
-           if (sCred && mCred && sCred.id !== mCred.id) {
-               replacements.set(mCred.id, sCred.id);
-           }
-       });
+      const stagingKeys = Object.keys(stagingCreds);
+      const mainKeys = Object.keys(mainCreds);
 
-       // 2. Type replacements (Different Type)
-       // Find keys present in Staging but not in Main, and vice versa
-       const newTypes = stagingKeys.filter(k => !mainKeys.includes(k));
-       const oldTypes = mainKeys.filter(k => !stagingKeys.includes(k));
+      // 1. Direct ID replacements (Same Type)
+      stagingKeys.forEach(credType => {
+        const sCred = stagingCreds[credType];
+        const mCred = mainCreds[credType];
 
-       // If we have exactly one new type and one old type on the same node, assume it's a replacement
-       if (newTypes.length === 1 && oldTypes.length === 1) {
-           const sType = newTypes[0];
-           const mType = oldTypes[0];
-           
-           const sCred = stagingCreds[sType];
-           const mCred = mainCreds[mType];
+        if (sCred && mCred && sCred.id !== mCred.id) {
+          replacements.set(mCred.id, sCred.id);
+        }
+      });
 
-           if (sCred && mCred) {
-               replacements.set(mCred.id, sCred.id);
-           }
-       }
+      // 2. Type replacements (Different Type)
+      // Find keys present in Staging but not in Main, and vice versa
+      const newTypes = stagingKeys.filter(k => !mainKeys.includes(k));
+      const oldTypes = mainKeys.filter(k => !stagingKeys.includes(k));
+
+      // If we have exactly one new type and one old type on the same node, assume it's a replacement
+      if (newTypes.length === 1 && oldTypes.length === 1) {
+        const sType = newTypes[0];
+        const mType = oldTypes[0];
+
+        const sCred = stagingCreds[sType];
+        const mCred = mainCreds[mType];
+
+        if (sCred && mCred) {
+          replacements.set(mCred.id, sCred.id);
+        }
+      }
     }
   });
 
@@ -259,6 +260,51 @@ export function extractCredentials(workflow: N8NWorkflow): Credential[] {
 }
 
 /**
+ * Extract all unique credentials from a workflow with node usage tracking
+ * This function tracks which nodes use each credential, enabling better
+ * multi-credential support when workflows have multiple credentials of the same type
+ */
+export function extractCredentialsWithUsage(workflow: N8NWorkflow): CredentialWithUsage[] {
+  const credentials = new Map<string, CredentialWithUsage>();
+
+  workflow.nodes?.forEach((node: N8NNode) => {
+    if (node.credentials) {
+      // Find authentication parameter value if it exists
+      const nodeAuthType = node.parameters?.authentication;
+
+      Object.entries(node.credentials).forEach(([key, cred]: [string, any]) => {
+        if (cred.id) {
+          if (credentials.has(cred.id)) {
+            // Add node to existing credential's usage list
+            credentials.get(cred.id)!.usedByNodes.push({
+              nodeId: node.id,
+              nodeName: node.name,
+              nodeType: node.type
+            });
+          } else {
+            // Create new credential entry with usage tracking
+            credentials.set(cred.id, {
+              id: cred.id,
+              name: cred.name || key,
+              type: key,
+              nodeType: node.type,
+              nodeAuthType: typeof nodeAuthType === 'string' ? nodeAuthType : undefined,
+              usedByNodes: [{
+                nodeId: node.id,
+                nodeName: node.name,
+                nodeType: node.type
+              }]
+            });
+          }
+        }
+      });
+    }
+  });
+
+  return Array.from(credentials.values());
+}
+
+/**
  * Extract all domains/URLs from a workflow
  */
 export function extractDomains(workflow: N8NWorkflow, workflowName: string): Domain[] {
@@ -275,30 +321,30 @@ export function extractDomains(workflow: N8NWorkflow, workflowName: string): Dom
   workflow.nodes?.forEach((node: N8NNode) => {
     // Special handling for Webhook nodes
     let paramsToScan = node.parameters;
-    
+
     if (node.type === 'n8n-nodes-base.webhook' && node.parameters) {
-        // Extract webhook details as a "domain" entry so it appears in the list
-        const httpMethod = node.parameters.httpMethod || 'GET';
-        const path = node.parameters.path;
-        // @ts-ignore
-        const webhookId = node.webhookId;
-        
-        if (path) {
-            domains.push({
-                url: `${httpMethod} ${path} (Webhook)`,
-                nodeId: node.id,
-                nodeName: node.name,
-                nodeType: node.type,
-                parameterPath: 'path',
-            });
-        }
-        
-        // Don't scan the 'path' parameter again in the generic scanner
-        // to avoid duplicate entries (one formatted as webhook, one raw)
-        if (paramsToScan) {
-            const { path, ...rest } = paramsToScan;
-            paramsToScan = rest;
-        }
+      // Extract webhook details as a "domain" entry so it appears in the list
+      const httpMethod = node.parameters.httpMethod || 'GET';
+      const path = node.parameters.path;
+      // @ts-ignore
+      const webhookId = node.webhookId;
+
+      if (path) {
+        domains.push({
+          url: `${httpMethod} ${path} (Webhook)`,
+          nodeId: node.id,
+          nodeName: node.name,
+          nodeType: node.type,
+          parameterPath: 'path',
+        });
+      }
+
+      // Don't scan the 'path' parameter again in the generic scanner
+      // to avoid duplicate entries (one formatted as webhook, one raw)
+      if (paramsToScan) {
+        const { path, ...rest } = paramsToScan;
+        paramsToScan = rest;
+      }
     }
 
     if (paramsToScan) {
@@ -362,33 +408,33 @@ export function extractWorkflowCalls(workflow: N8NWorkflow, workflowName: string
 
       // Sometimes it might be in 'source' or 'workflow'
       if (typeof targetWorkflow === 'object' && targetWorkflow !== null) {
-          // It's an object, try to find a name or id inside
-          // Common patterns: { mode: 'id', value: '...' } or { __rl: true, value: '...', mode: 'id' }
-          const paramObj = targetWorkflow as any;
-          const val = paramObj.value;
-          
-          // Try to extract cachedResultName from the object if not found at top level
-          if (!targetWorkflowName && paramObj.cachedResultName) {
-              targetWorkflowName = paramObj.cachedResultName;
-          }
+        // It's an object, try to find a name or id inside
+        // Common patterns: { mode: 'id', value: '...' } or { __rl: true, value: '...', mode: 'id' }
+        const paramObj = targetWorkflow as any;
+        const val = paramObj.value;
 
-          if (val) {
-             targetWorkflow = val;
-          } else if (paramObj.__rl && paramObj.value) {
-             // Explicit handling for n8n resource locator format
-             targetWorkflow = paramObj.value;
-          } else {
-             try {
-                targetWorkflow = JSON.stringify(targetWorkflow);
-             } catch(e) {
-                targetWorkflow = "Unknown Workflow Object";
-             }
+        // Try to extract cachedResultName from the object if not found at top level
+        if (!targetWorkflowName && paramObj.cachedResultName) {
+          targetWorkflowName = paramObj.cachedResultName;
+        }
+
+        if (val) {
+          targetWorkflow = val;
+        } else if (paramObj.__rl && paramObj.value) {
+          // Explicit handling for n8n resource locator format
+          targetWorkflow = paramObj.value;
+        } else {
+          try {
+            targetWorkflow = JSON.stringify(targetWorkflow);
+          } catch (e) {
+            targetWorkflow = "Unknown Workflow Object";
           }
+        }
       }
 
       // Ensure it's a string
       if (targetWorkflow && typeof targetWorkflow !== 'string') {
-          targetWorkflow = String(targetWorkflow);
+        targetWorkflow = String(targetWorkflow);
       }
 
       if (targetWorkflow) {
@@ -414,8 +460,8 @@ export function extractWorkflowCalls(workflow: N8NWorkflow, workflowName: string
  * Compare credentials between staging and main branches
  */
 export function compareCredentials(
-  stagingCredentials: Credential[],
-  mainCredentials: Credential[]
+  stagingCredentials: CredentialWithUsage[],
+  mainCredentials: CredentialWithUsage[]
 ): CredentialDiff[] {
   const allIds = new Set<string>();
   stagingCredentials.forEach((c) => allIds.add(c.id));
@@ -425,12 +471,23 @@ export function compareCredentials(
     const stagingCred = stagingCredentials.find((c) => c.id === id);
     const mainCred = mainCredentials.find((c) => c.id === id);
 
+    // Find alternatives: same type but different ID
+    // We typically look for alternatives in the "Main" branch if we are in Staging and the ID is different
+    // Or just all credentials of the same type in Main that are NOT this one
+    const type = stagingCred?.type || mainCred?.type || 'unknown';
+
+    const alternatives = mainCredentials.filter(c =>
+      c.type === type && c.id !== id
+    );
+
     return {
       id,
       name: stagingCred?.name || mainCred?.name || id,
       stagingName: stagingCred?.name,
       mainName: mainCred?.name,
-      type: stagingCred?.type || mainCred?.type || 'unknown',
+      type,
+      stagingType: stagingCred?.type, // Added to match CredentialDiff interface if needed, or just rely on 'type'
+      mainType: mainCred?.type,     // Added to match CredentialDiff interface if needed
       inStaging: !!stagingCred,
       inMain: !!mainCred,
       stagingOnly: !!stagingCred && !mainCred,
@@ -438,6 +495,7 @@ export function compareCredentials(
       stagingNodeAuthType: stagingCred?.nodeAuthType,
       mainNodeAuthType: mainCred?.nodeAuthType,
       files: [], // Files will be populated by the aggregator
+      alternatives,
     };
   });
 }
@@ -555,7 +613,7 @@ export function isStagingWorkflow(name: string): boolean {
 export function detectHardcodedSecrets(workflow: any): string[] {
   const secrets: string[] = [];
   const jsonStr = JSON.stringify(workflow);
-  
+
   // Patterns to detect
   const patterns = [
     /Bearer\s+[A-Za-z0-9\-_.]{20,}/g,  // Bearer tokens

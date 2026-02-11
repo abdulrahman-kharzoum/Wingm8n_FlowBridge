@@ -1,9 +1,8 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Bridge%20at%20Night.png" alt="Bridge at Night" width="120" height="120" />
+<img src="LogoForReadme.png" alt="FlowBridge Logo" width="100%" />
 
-# 🚀 Wingm8n_FlowBridge
-
+# 🚀 [Original Project Name]
 ### **Bridge your n8n workflows from Staging to Production with Intelligence & Confidence**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -126,13 +125,7 @@ DATABASE_URL=file:sqlite.db
    pnpm install
    ```
 
-3. **Run database migrations**
-
-   ```bash
-   pnpm run db:push
-   ```
-
-4. **Start the development server**
+3. **Start the development server**
    ```bash
    pnpm run dev
    ```

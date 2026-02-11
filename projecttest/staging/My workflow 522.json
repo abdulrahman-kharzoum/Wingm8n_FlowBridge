@@ -1,0 +1,92 @@
+{
+  "name": "My workflow 522",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c711c9a9-3053-4a96-b7fd-54a0b8f7a886",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "tableId": "system_keys"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "fa110ca1-8735-429d-a1ce-998d2eba4661",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "rZKxg1WQE99vNeKz",
+          "name": "wonderhr"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "supervisors"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "727189d9-9b4d-4ffd-b558-09c3ad57b2cb",
+      "name": "Get a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "rZKxg1WQE99vNeKz",
+          "name": "wonderhr"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row": {
+      "main": [
+        [
+          {
+            "node": "Get a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "c0471562-ad38-41fa-8e3f-c3413d820bb2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "82a07e25bb5446408550f6d7aab9c641753a0ccd2476c2dc971589d3e32f8cc3"
+  },
+  "id": "xZHTtlPo-hDEAxs_aXKM9",
+  "tags": []
+}
