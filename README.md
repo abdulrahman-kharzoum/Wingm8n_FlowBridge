@@ -2,7 +2,7 @@
 
 <img src="LogoForReadme.png" alt="FlowBridge Logo" width="100%" />
 
-# 🚀 [Original Project Name]
+# 🚀 Wingm8n_FlowBridge
 ### **Bridge your n8n workflows from Staging to Production with Intelligence & Confidence**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -127,15 +127,47 @@ DATABASE_URL=file:sqlite.db
 
 3. **Set up the database**
 
-   Run the database migrations to create the SQLite database:
+   FlowBridge uses SQLite with Drizzle ORM. No separate SQLite installation is required - the `@libsql/client` package handles everything.
+
+   **First time setup or reset database:**
+   ```bash
+   # Delete old database (if exists)
+   rm sqlite.db
+
+   # Generate migrations
+   npx drizzle-kit generate
+
+   # Apply migrations
+   npx drizzle-kit migrate
+   ```
+
+   **Or use the shortcut command:**
    ```bash
    pnpm run db:push
    ```
+
+   This will create a `sqlite.db` file in your project root with all required tables.
 
 4. **Start the development server**
    ```bash
    pnpm run dev
    ```
+
+   The app will be running at [http://localhost:3000](http://localhost:3000).
+
+### Troubleshooting
+
+**Database Errors:**
+- If you see `no such table: users` error, the migrations haven't been applied. Run:
+  ```bash
+  npx drizzle-kit migrate
+  ```
+- If migrations fail with syntax errors, delete `sqlite.db` and regenerate:
+  ```bash
+  rm sqlite.db
+  npx drizzle-kit generate
+  npx drizzle-kit migrate
+  ```
 
 The app will be running at [http://localhost:3000](http://localhost:3000).
 
