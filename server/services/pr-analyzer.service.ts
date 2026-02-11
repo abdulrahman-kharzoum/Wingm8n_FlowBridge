@@ -85,13 +85,14 @@ export class PRAnalyzerService {
             file.status === 'modified')
       );
 
-      // 3.5 Fetch all main branch workflows to build credential registry
+      // 3.5 Fetch all credentials from BOTH branches to build credential registry
       const allMainCredentials = new Map<string, CredentialWithUsage[]>(); // Type -> CredentialWithUsage[]
+      const allStagingCredentials = new Map<string, CredentialWithUsage[]>(); // Type -> CredentialWithUsage[]
       try {
         const ghService = createGitHubService(this.accessToken);
-        // Fetch all workflows from base branch (recursively)
+        
+        // Fetch all workflows from base branch (main)
         const mainWorkflows = await fetchBranchWorkflows(ghService, owner, repo, pr.base.ref);
-
         mainWorkflows.workflows.forEach(w => {
           const creds = extractCredentialsWithUsage(w.content);
           creds.forEach(c => {
@@ -105,10 +106,28 @@ export class PRAnalyzerService {
             }
           });
         });
-        const totalCreds = Array.from(allMainCredentials.values()).reduce((acc, list) => acc + list.length, 0);
-        console.log(`[PR Analyzer] Registry built with ${allMainCredentials.size} credential types and ${totalCreds} total credentials from Main branch.`);
+        
+        // Fetch all workflows from head branch (staging)
+        const stagingWorkflows = await fetchBranchWorkflows(ghService, owner, repo, pr.head.ref);
+        stagingWorkflows.workflows.forEach(w => {
+          const creds = extractCredentialsWithUsage(w.content);
+          creds.forEach(c => {
+            if (!allStagingCredentials.has(c.type)) {
+              allStagingCredentials.set(c.type, []);
+            }
+            // Avoid duplicates by ID
+            const existingList = allStagingCredentials.get(c.type)!;
+            if (!existingList.some(ex => ex.id === c.id)) {
+              existingList.push(c);
+            }
+          });
+        });
+        
+        const totalMainCreds = Array.from(allMainCredentials.values()).reduce((acc, list) => acc + list.length, 0);
+        const totalStagingCreds = Array.from(allStagingCredentials.values()).reduce((acc, list) => acc + list.length, 0);
+        console.log(`[PR Analyzer] Registry built with ${allMainCredentials.size} main types (${totalMainCreds} creds) and ${allStagingCredentials.size} staging types (${totalStagingCreds} creds).`);
       } catch (e) {
-        console.error('[PR Analyzer] Failed to fetch main branch workflows for credential registry:', e);
+        console.error('[PR Analyzer] Failed to fetch branch workflows for credential registry:', e);
         // Proceed without registry (alternatives will be empty)
       }
 
@@ -190,7 +209,7 @@ export class PRAnalyzerService {
 
       // 6. Aggregate and deduplicate results
       const validResults = analysisResults.filter((r): r is any => r !== null) as WorkflowFileAnalysis[];
-      const aggregated = this.aggregateAnalysis(validResults, allMainCredentials);
+      const aggregated = this.aggregateAnalysis(validResults, allMainCredentials, allStagingCredentials);
 
       return {
         pr: {
@@ -210,7 +229,11 @@ export class PRAnalyzerService {
     }
   }
 
-  private aggregateAnalysis(results: WorkflowFileAnalysis[], credentialRegistry: Map<string, CredentialWithUsage[]> = new Map()) {
+  private aggregateAnalysis(
+    results: WorkflowFileAnalysis[],
+    mainCredentialRegistry: Map<string, CredentialWithUsage[]> = new Map(),
+    stagingCredentialRegistry: Map<string, CredentialWithUsage[]> = new Map()
+  ) {
     const credentials = new Map();
     const domains = new Map();
     const workflowCalls = new Map();
@@ -332,6 +355,7 @@ export class PRAnalyzerService {
             if (!credentials.has(cred.id)) {
               credentials.set(cred.id, {
                 ...cred,
+                mainId: cred.id, // Explicitly set mainId
                 mainType: cred.type,
                 inMain: true,
                 inStaging: false,
@@ -511,6 +535,7 @@ export class PRAnalyzerService {
                   ...cred,
                   inMain: false,
                   inStaging: true,
+                  stagingId: cred.id, // Explicitly set stagingId
                   files: [result.filename],
                   stagingName: cred.name,
                   stagingType: cred.type,
@@ -667,24 +692,38 @@ export class PRAnalyzerService {
       return false;
     });
 
-    // Enrich credentials with alternatives
+    // Enrich credentials with alternatives from BOTH branches
     const enrichedCredentials = filteredCredentials.map(cred => {
       const type = cred.stagingType || cred.mainType;
-      let alternatives: Credential[] = [];
+      const alternatives: Array<CredentialWithUsage & { source: 'main' | 'staging' }> = [];
 
-      if (type && credentialRegistry.has(type)) {
-        // Get all credentials of this type from Main
-        const allOfSameType = credentialRegistry.get(type)!;
-
-        // Filter out the one that is currently selected (Staging ID)
-        alternatives = allOfSameType.filter(alt =>
-          alt.id !== cred.stagingId
-        );
+      // Add main credentials of the same type
+      if (type && mainCredentialRegistry.has(type)) {
+        const mainAlts = mainCredentialRegistry.get(type)!
+          .filter(alt => alt.id !== cred.stagingId && alt.id !== cred.mainId)
+          .map(alt => ({ ...alt, source: 'main' as const }));
+        alternatives.push(...mainAlts);
       }
+
+      // Add staging credentials of the same type
+      if (type && stagingCredentialRegistry.has(type)) {
+        const stagingAlts = stagingCredentialRegistry.get(type)!
+          .filter(alt => alt.id !== cred.stagingId && alt.id !== cred.mainId)
+          .map(alt => ({ ...alt, source: 'staging' as const }));
+        alternatives.push(...stagingAlts);
+      }
+
+      // Remove duplicates by ID (prefer main if same ID exists in both)
+      const seenIds = new Set<string>();
+      const uniqueAlternatives = alternatives.filter(alt => {
+        if (seenIds.has(alt.id)) return false;
+        seenIds.add(alt.id);
+        return true;
+      });
 
       return {
         ...cred,
-        alternatives
+        alternatives: uniqueAlternatives
       };
     });
 

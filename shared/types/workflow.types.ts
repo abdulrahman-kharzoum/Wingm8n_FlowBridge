@@ -22,6 +22,10 @@ export interface CredentialWithUsage extends Credential {
   usedByNodes: CredentialUsage[];
 }
 
+export interface CredentialAlternative extends CredentialWithUsage {
+  source: 'main' | 'staging';
+}
+
 export interface CredentialDiff {
   id: string;
   stagingId?: string;
@@ -39,7 +43,7 @@ export interface CredentialDiff {
   stagingNodeAuthType?: string;
   mainNodeAuthType?: string;
   files: string[];
-  alternatives: CredentialWithUsage[]; // Other credentials of the same type from the base branch (now with usage info)
+  alternatives: CredentialAlternative[]; // Other credentials of the same type from BOTH branches
 }
 
 // Domain/URL types

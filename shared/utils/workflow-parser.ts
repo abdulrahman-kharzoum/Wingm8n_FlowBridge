@@ -471,14 +471,31 @@ export function compareCredentials(
     const stagingCred = stagingCredentials.find((c) => c.id === id);
     const mainCred = mainCredentials.find((c) => c.id === id);
 
-    // Find alternatives: same type but different ID
-    // We typically look for alternatives in the "Main" branch if we are in Staging and the ID is different
-    // Or just all credentials of the same type in Main that are NOT this one
+    // Find alternatives: same type but different ID from BOTH branches
     const type = stagingCred?.type || mainCred?.type || 'unknown';
 
-    const alternatives = mainCredentials.filter(c =>
-      c.type === type && c.id !== id
-    );
+    // Type for alternatives with source
+    type CredentialAlt = CredentialWithUsage & { source: 'main' | 'staging' };
+
+    // Get alternatives from main credentials
+    const mainAlternatives: CredentialAlt[] = mainCredentials
+      .filter(c => c.type === type && c.id !== id)
+      .map(c => ({ ...c, source: 'main' as const }));
+
+    // Get alternatives from staging credentials
+    const stagingAlternatives: CredentialAlt[] = stagingCredentials
+      .filter(c => c.type === type && c.id !== id)
+      .map(c => ({ ...c, source: 'staging' as const }));
+
+    // Combine and remove duplicates (prefer main if same ID)
+    const alternativesMap = new Map<string, CredentialAlt>();
+    mainAlternatives.forEach(alt => alternativesMap.set(alt.id, alt));
+    stagingAlternatives.forEach(alt => {
+      if (!alternativesMap.has(alt.id)) {
+        alternativesMap.set(alt.id, alt);
+      }
+    });
+    const alternatives = Array.from(alternativesMap.values());
 
     return {
       id,

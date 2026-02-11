@@ -200,17 +200,24 @@ export class N8nService {
 
 // Singleton or Factory
 export function createN8nService(): N8nService {
-  // Use environment variables
-  // Fallback values or check for existence
+  // Use environment variables only - no hardcoded URLs
   const baseUrl = process.env.N8N_BASE_URL || 'http://localhost:5678/api/v1';
   const apiKey = process.env.N8N_API_KEY || '';
-  const webhookUrl = process.env.N8N_CREATE_WORKFLOW_WEBHOOK_URL || 'https://eranclikview.app.n8n.cloud/webhook/create_workflow';
-  const mergeWebhookUrl = process.env.N8N_MERGE_WEBHOOK_URL || 'https://n8n.wonderbeauties.com/webhook/merge_n8n_github';
-  const credentialWebhookUrl = process.env.N8N_CREATE_CREDENTIAL_WEBHOOK_URL || 'https://n8n.wonderbeauties.com/webhook/create_credential';
-  const fetchDevWorkflowsWebhookUrl = process.env.N8N_FETCH_DEV_WORKFLOWS_WEBHOOK_URL || 'https://n8n.wonderbeauties.com/webhook/fetch_dev_workflows';
+  const webhookUrl = process.env.N8N_CREATE_WORKFLOW_WEBHOOK_URL || '';
+  const mergeWebhookUrl = process.env.N8N_MERGE_WEBHOOK_URL || '';
+  const credentialWebhookUrl = process.env.N8N_CREATE_CREDENTIAL_WEBHOOK_URL || '';
+  const fetchDevWorkflowsWebhookUrl = process.env.N8N_FETCH_DEV_WORKFLOWS_WEBHOOK_URL || '';
 
   if (!apiKey) {
       console.warn('N8N_API_KEY is not set. N8N integration will fail.');
+  }
+
+  // Validate required webhook URLs
+  if (!webhookUrl) {
+      console.warn('N8N_CREATE_WORKFLOW_WEBHOOK_URL is not set. Workflow creation will fail.');
+  }
+  if (!mergeWebhookUrl) {
+      console.warn('N8N_MERGE_WEBHOOK_URL is not set. Workflow sync will fail.');
   }
 
   return new N8nService(baseUrl, apiKey, webhookUrl, mergeWebhookUrl, credentialWebhookUrl, fetchDevWorkflowsWebhookUrl);

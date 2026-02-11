@@ -24,7 +24,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import type { CredentialDiff } from '@shared/types/workflow.types';
+import type { CredentialDiff, CredentialAlternative } from '@shared/types/workflow.types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface CredentialsComparisonProps {
@@ -291,12 +291,16 @@ export default function CredentialsComparison({
                                   {/* Alternatives with node usage info */}
                                   {cred.alternatives && cred.alternatives.length > 0 && (
                                     <>
-                                      <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Other Existing Options</div>
-                                      {cred.alternatives.map(alt => (
+                                      <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">All Available Options</div>
+                                      {cred.alternatives.map((alt: CredentialAlternative) => (
                                         <SelectItem key={alt.id} value={alt.id} className="focus:bg-slate-700 focus:text-white">
                                           <span className="flex items-center gap-2">
                                             <span className="truncate max-w-[200px]">{alt.name}</span>
-                                            <Badge variant="outline" className="text-[10px] border-slate-600 text-slate-400">Main (Unchanged)</Badge>
+                                            {alt.source === 'staging' ? (
+                                              <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">Staging</Badge>
+                                            ) : (
+                                              <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-400">Main</Badge>
+                                            )}
                                           </span>
                                         </SelectItem>
                                       ))}
@@ -311,9 +315,16 @@ export default function CredentialsComparison({
                                         <HoverCardContent className="w-80 bg-slate-900 border-slate-700">
                                           <div className="space-y-2">
                                             <div className="text-xs font-semibold text-slate-400 uppercase">Credential Usage</div>
-                                            {cred.alternatives.map(alt => (
+                                            {cred.alternatives.map((alt: CredentialAlternative) => (
                                               <div key={alt.id} className="space-y-1">
-                                                <div className="text-xs text-white font-medium">{alt.name}</div>
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-xs text-white font-medium">{alt.name}</span>
+                                                  {alt.source === 'staging' ? (
+                                                    <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">Staging</Badge>
+                                                  ) : (
+                                                    <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-400">Main</Badge>
+                                                  )}
+                                                </div>
                                                 {alt.usedByNodes && alt.usedByNodes.length > 0 ? (
                                                   <div className="text-xs text-slate-300 space-y-1 max-h-32 overflow-y-auto">
                                                     {alt.usedByNodes.map((node, idx) => (
