@@ -38,6 +38,7 @@ import DomainsComparison from '@/components/DomainsComparison';
 import WorkflowCallsComparison from '@/components/WorkflowCallsComparison';
 import MetadataComparison from '@/components/MetadataComparison';
 import NodeChangesComparison from '@/components/NodeChangesComparison';
+import { normalizeWorkflowName } from '@shared/utils/workflow-parser';
 import MergeDecisionSummary from '@/components/MergeDecisionSummary';
 import type { MergeDecision } from '@shared/types/workflow.types';
 import { toast } from 'sonner';
@@ -375,7 +376,7 @@ export default function ComparisonPage() {
           // The 'call' object from analysis doesn't contain the full JSON.
           
           const result = await createWorkflowViaWebhookMutation.mutateAsync({
-              name
+              name: normalizeWorkflowName(name)
           });
 
           toast.success(`Created workflow: ${result.name}`);
@@ -412,16 +413,9 @@ export default function ComparisonPage() {
           // Process sequentially to avoid overwhelming the webhook/server
           for (const call of missingCalls) {
               try {
-                  // Determine name: use dev prefix if needed, or just clean name
-                  let nameToCreate = call.targetWorkflowName || call.targetWorkflow;
-                  if (nameToCreate.startsWith('staging - ')) {
-                      nameToCreate = nameToCreate.replace('staging - ', 'dev - ');
-                  } else if (nameToCreate.startsWith('staging- ')) {
-                      // Handle case without space after dash (e.g., "staging- X" -> "dev - X")
-                      nameToCreate = nameToCreate.replace('staging- ', 'dev - ');
-                  } else if (!nameToCreate.startsWith('dev - ')) {
-                      nameToCreate = `dev - ${nameToCreate}`;
-                  }
+                  const nameToCreate = normalizeWorkflowName(
+                      call.targetWorkflowName || call.targetWorkflow
+                  );
 
                   const result = await createWorkflowViaWebhookMutation.mutateAsync({
                       name: nameToCreate

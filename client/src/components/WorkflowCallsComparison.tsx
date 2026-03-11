@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { WorkflowCallDiff, WorkflowCall } from '@shared/types/workflow.types';
+import { normalizeWorkflowName } from '@shared/utils/workflow-parser';
 import { Loader2 } from 'lucide-react';
 
 export type WorkflowCallDecision = 'add' | 'remove' | 'keep' | { action: 'map'; targetId: string; targetName?: string };
@@ -93,6 +94,24 @@ export default function WorkflowCallsComparison({
     // Confirmation Dialog State
     const [isConfirmingCreate, setIsConfirmingCreate] = useState(false);
     const [workflowsToCreate, setWorkflowsToCreate] = useState<Array<{name: string, source: string, originalCall?: WorkflowCall}>>([]);
+    const normalizedAvailableWorkflowNames = useMemo(
+        () => new Set(availableWorkflows.map(workflow => normalizeWorkflowName(workflow.name))),
+        [availableWorkflows]
+    );
+    const normalizedAddedWorkflowNames = useMemo(
+        () => new Set(addedWorkflows.map(workflow => normalizeWorkflowName(workflow.name))),
+        [addedWorkflows]
+    );
+    const normalizedCreatedWorkflows = useMemo(() => {
+        const normalizedMap = new Map<string, string>();
+        createdWorkflows.forEach((id, name) => {
+            const normalizedName = normalizeWorkflowName(name);
+            if (!normalizedMap.has(normalizedName)) {
+                normalizedMap.set(normalizedName, id);
+            }
+        });
+        return normalizedMap;
+    }, [createdWorkflows]);
 
     const relationships = useMemo(() => {
         const groups: Record<string, typeof workflowCalls> = {};
@@ -117,26 +136,18 @@ export default function WorkflowCallsComparison({
                 const targetKey = call.targetWorkflow; // Usually ID (or Name if ID not found)
                 if (seenTargets.has(targetKey)) return;
 
-                // Determine the expected Production Name
-                // If staging name is "staging - X", prod name should be "dev - X"
                 let stagingName = call.targetWorkflowName || targetKey;
-                let expectedProdName = stagingName;
-
-                if (stagingName.startsWith('staging - ')) {
-                    expectedProdName = stagingName.replace('staging - ', 'dev - ');
-                } else if (!stagingName.startsWith('dev - ')) {
-                    expectedProdName = `dev - ${stagingName}`;
-                }
+                const expectedProdName = normalizeWorkflowName(stagingName);
 
                 // Check if exists in Prod (Main)
-                const existsInProd = availableWorkflows.some(w => w.name === expectedProdName);
+                const existsInProd = normalizedAvailableWorkflowNames.has(expectedProdName);
                 
                 // Check if exists in Created Workflows
-                const existsInCreated = createdWorkflows.has(expectedProdName) || createdWorkflows.has(stagingName);
+                const existsInCreated = normalizedCreatedWorkflows.has(expectedProdName);
 
                 // Check if exists in Added Workflows (New in PR) - IF NOT ALREADY CREATED
                 // We match loosely by name since ID might not be known yet or strictly by Name if available
-                const existsInAdded = addedWorkflows.some(w => w.name === expectedProdName || w.name === stagingName);
+                const existsInAdded = normalizedAddedWorkflowNames.has(expectedProdName);
 
                 // Also check if mapped already
                 const isMapped = suggestions?.[targetKey]?.status === 'mapped';
@@ -149,7 +160,7 @@ export default function WorkflowCallsComparison({
             }
         });
         return missing;
-    }, [workflowCalls, availableWorkflows, suggestions, addedWorkflows, createdWorkflows]);
+    }, [workflowCalls, normalizedAvailableWorkflowNames, suggestions, normalizedAddedWorkflowNames, normalizedCreatedWorkflows]);
 
     // Calculate actual missing workflows to CREATE (including those from Added Workflows that aren't in Prod yet)
     // The user wants to see "Create Missing" for workflows that are detected as NEW in this PR (Added Files)
@@ -164,22 +175,11 @@ export default function WorkflowCallsComparison({
         
         // 1. From Added Workflows (High Confidence)
         addedWorkflows.forEach(w => {
-            // Check if already exists in Prod (unlikely if status is added, but possible if name collision)
-            // Or if we want to rename it to 'dev - ...' ?
-            // User requirement: "get the name of these files from the json inside of them"
-            let name = w.name;
-            // Apply naming convention if needed? Usually we want to map Staging Name -> Dev Name
-             if (name.startsWith('staging - ')) {
-                name = name.replace('staging - ', 'dev - ');
-            } else if (name.startsWith('staging- ')) {
-                name = name.replace('staging- ', 'dev - ');
-            } else if (!name.startsWith('dev - ')) {
-                 name = `dev - ${name}`;
-            }
+            const name = normalizeWorkflowName(w.name);
 
             // Exclude if already created or in available workflows
-            const existsInCreated = createdWorkflows.has(name);
-            const existsInProd = availableWorkflows.some(aw => aw.name === name);
+            const existsInCreated = normalizedCreatedWorkflows.has(name);
+            const existsInProd = normalizedAvailableWorkflowNames.has(name);
 
             if (!existsInProd && !existsInCreated) {
                  if (!seenNames.has(name)) {
@@ -191,17 +191,10 @@ export default function WorkflowCallsComparison({
 
         // 2. From Missing Calls (Inferred)
         missingCalls.forEach(call => {
-             let name = call.targetWorkflowName || call.targetWorkflow;
-             if (name.startsWith('staging - ')) {
-                name = name.replace('staging - ', 'dev - ');
-            } else if (name.startsWith('staging- ')) {
-                name = name.replace('staging- ', 'dev - ');
-            } else if (!name.startsWith('dev - ')) {
-                 name = `dev - ${name}`;
-            }
+             const name = normalizeWorkflowName(call.targetWorkflowName || call.targetWorkflow);
             
-            const existsInCreated = createdWorkflows.has(name);
-            const existsInProd = availableWorkflows.some(aw => aw.name === name);
+            const existsInCreated = normalizedCreatedWorkflows.has(name);
+            const existsInProd = normalizedAvailableWorkflowNames.has(name);
 
             if (!seenNames.has(name) && !existsInProd && !existsInCreated) {
                 toCreate.push({ name, source: 'Missing Call Target', originalCall: call });
@@ -210,7 +203,7 @@ export default function WorkflowCallsComparison({
         });
 
         return toCreate;
-    }, [addedWorkflows, missingCalls, availableWorkflows, createdWorkflows]);
+    }, [addedWorkflows, missingCalls, normalizedAvailableWorkflowNames, normalizedCreatedWorkflows]);
 
     useEffect(() => {
         const initial = new Set<string>();
@@ -495,23 +488,9 @@ export default function WorkflowCallsComparison({
                                             let targetDisplayName = callObj.targetWorkflowName || target;
 
                                             // Determine if created
-                                            let createdId: string | undefined;
-                                            if (createdWorkflows.has(targetDisplayName)) {
-                                                createdId = createdWorkflows.get(targetDisplayName);
-                                            } else if (createdWorkflows.has(target)) {
-                                                createdId = createdWorkflows.get(target);
-                                            } else {
-                                                // Try normalized
-                                                let normName = targetDisplayName;
-                                                 if (normName.startsWith('staging - ')) {
-                                                    normName = normName.replace('staging - ', 'dev - ');
-                                                } else if (!normName.startsWith('dev - ')) {
-                                                     normName = `dev - ${normName}`;
-                                                }
-                                                if (createdWorkflows.has(normName)) {
-                                                    createdId = createdWorkflows.get(normName);
-                                                }
-                                            }
+                                            const createdId = normalizedCreatedWorkflows.get(
+                                                normalizeWorkflowName(targetDisplayName || target)
+                                            );
 
                                             if (isMappedDecision) {
                                                 currentMappingId = decision.targetId;
@@ -590,15 +569,10 @@ export default function WorkflowCallsComparison({
                                                                     
                                                                     {/* Include Added Workflows as options - Only if NOT created yet */}
                                                                     {addedWorkflows.map((w, idx) => {
-                                                                         let devName = w.name;
-                                                                         if (devName.startsWith('staging - ')) {
-                                                                            devName = devName.replace('staging - ', 'dev - ');
-                                                                        } else if (!devName.startsWith('dev - ')) {
-                                                                             devName = `dev - ${devName}`;
-                                                                        }
+                                                                         const normalizedName = normalizeWorkflowName(w.name);
                                                                          
                                                                          // If already created, don't show as "New in PR"
-                                                                         if (createdWorkflows.has(devName) || createdWorkflows.has(w.name)) return null;
+                                                                         if (normalizedCreatedWorkflows.has(normalizedName) || normalizedAvailableWorkflowNames.has(normalizedName)) return null;
 
                                                                          const val = w.id || `pending-${w.name}`;
                                                                          if (availableWorkflows.some(aw => aw.id === val)) return null;
@@ -607,7 +581,7 @@ export default function WorkflowCallsComparison({
                                                                              <SelectItem key={`added-${idx}`} value={val}>
                                                                                 <span className="flex flex-col text-left">
                                                                                     <span className="flex items-center gap-2">
-                                                                                        {w.name}
+                                                                                        {normalizedName}
                                                                                         <Badge variant="outline" className="text-[8px] h-3 px-1 border-emerald-500/30 text-emerald-400">New in PR</Badge>
                                                                                     </span>
                                                                                     <span className="text-[10px] text-slate-500 font-mono">{w.filename}</span>
@@ -672,14 +646,7 @@ export default function WorkflowCallsComparison({
                                                                     className="underline hover:text-red-300 cursor-pointer"
                                                                     onClick={() => {
                                                                         setResolvingCall(callObj);
-                                                                        // Suggest dev name
-                                                                        let suggestedName = callObj.targetWorkflowName || '';
-                                                                        if (suggestedName.startsWith('staging - ')) {
-                                                                            suggestedName = suggestedName.replace('staging - ', 'dev - ');
-                                                                        } else {
-                                                                            suggestedName = `dev - ${suggestedName}`;
-                                                                        }
-                                                                        setManualName(suggestedName);
+                                                                        setManualName(normalizeWorkflowName(callObj.targetWorkflowName || ''));
                                                                         setResolveMode('create');
                                                                     }}
                                                                  >
@@ -745,7 +712,7 @@ export default function WorkflowCallsComparison({
                                 value={manualName} 
                                 onChange={(e) => setManualName(e.target.value)} 
                                 className="bg-slate-800 border-slate-600"
-                                placeholder="e.g. dev - My Workflow" 
+                                placeholder="e.g. CLOUD Body ROUTINE" 
                             />
                             <p className="text-xs text-slate-500">
                                 This will create a basic workflow structure using the configured N8N Webhook.

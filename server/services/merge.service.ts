@@ -4,6 +4,7 @@
  */
 
 import type { N8NWorkflow, MergeDecision, MergeBranch } from '@shared/types/workflow.types';
+import { normalizeWorkflowName } from '@shared/utils/workflow-parser';
 import { GitHubService } from './github.service';
 
 export class MergeService {
@@ -142,6 +143,13 @@ export class MergeService {
     createdWorkflowMappings?: Record<string, string>
   ): Array<{ name: string; path: string; content: N8NWorkflow }> {
     console.log(`[Merge] Merging workflows: ${stagingWorkflows.length} staging, ${mainWorkflows.length} main`);
+    const normalizedCreatedWorkflowMappings = new Map<string, string>();
+
+    if (createdWorkflowMappings) {
+      Object.entries(createdWorkflowMappings).forEach(([name, id]) => {
+        normalizedCreatedWorkflowMappings.set(normalizeWorkflowName(name), id);
+      });
+    }
     
     // Build a map of all available credentials in Main for lookup
     const mainCredentialMap = new Map<string, string>(); // ID -> Name
@@ -218,27 +226,19 @@ export class MergeService {
           mainCredentialMap
         );
 
-        // Check if this staging workflow was mapped to a newly created dev workflow
+        // Check if this staging workflow was mapped to a newly created production workflow
         // Priority 1: Use createdWorkflowMappings (direct from "Create Missing" webhook)
         let replaced = false;
         if (createdWorkflowMappings && Object.keys(createdWorkflowMappings).length > 0) {
-            const stagingName = stagingWorkflow.content.name;
-            // Convert staging name to expected dev name
-            let expectedDevName = stagingName;
-            if (stagingName.startsWith('staging - ')) {
-                expectedDevName = stagingName.replace('staging - ', 'dev - ');
-            } else if (stagingName.startsWith('staging- ')) {
-                expectedDevName = stagingName.replace('staging- ', 'dev - ');
-            } else if (!stagingName.startsWith('dev - ')) {
-                expectedDevName = `dev - ${stagingName}`;
-            }
+            const expectedWorkflowName = normalizeWorkflowName(stagingWorkflow.content.name);
+            const newId =
+              createdWorkflowMappings[expectedWorkflowName] ||
+              normalizedCreatedWorkflowMappings.get(expectedWorkflowName);
             
-            // Look up in createdWorkflowMappings
-            if (createdWorkflowMappings[expectedDevName]) {
-                const newId = createdWorkflowMappings[expectedDevName];
-                console.log(`[Merge] Replacing staging workflow via createdWorkflowMappings: ${merged.id}/${merged.name} -> ${newId}/${expectedDevName}`);
+            if (newId) {
+                console.log(`[Merge] Replacing staging workflow via createdWorkflowMappings: ${merged.id}/${merged.name} -> ${newId}/${expectedWorkflowName}`);
                 merged.id = newId;
-                merged.name = expectedDevName;
+                merged.name = expectedWorkflowName;
                 replaced = true;
             }
         }

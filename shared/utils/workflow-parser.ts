@@ -611,17 +611,24 @@ function isValidUrl(str: string): boolean {
 }
 
 /**
- * Normalize workflow name (remove staging prefix if present)
+ * Normalize workflow name by removing environment prefixes like
+ * "staging - ", "staging-", or "dev - ".
  */
 export function normalizeWorkflowName(name: string): string {
-  return name.replace(/^staging-/i, '');
+  let normalizedName = name.trim();
+
+  while (/^(staging|dev)\s*-\s*/i.test(normalizedName)) {
+    normalizedName = normalizedName.replace(/^(staging|dev)\s*-\s*/i, '').trim();
+  }
+
+  return normalizedName;
 }
 
 /**
  * Check if a workflow is a staging workflow
  */
 export function isStagingWorkflow(name: string): boolean {
-  return /^staging-/i.test(name);
+  return /^staging\s*-\s*/i.test(name);
 }
 
 /**
